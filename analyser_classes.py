@@ -1,6 +1,23 @@
+from utils import *
+
+class Variable:
+    
+    def __init__(self, name: str, line: int):
+        self.name = name 
+        self.line = line
+    
+    def __repr__(self):
+        return "({}, {})".format(self.name, self.line)
+    
+    def __eq__(self, other):
+        return self.name == other.name and self.line == other.line
+    
+    def __hash__(self) -> int:
+        return hash(self)
+
 class Pattern:
     
-    def __init__(self, vuln_name, sources, sanitisers, sinks, implicit):
+    def __init__(self, vuln_name: str, sources: list[Variable], sanitisers: list[Variable], sinks: list[Variable], implicit: bool):
         self.vuln_name = vuln_name
         self.sources = sources
         self.sanitisers = sanitisers
@@ -10,11 +27,11 @@ class Pattern:
     def is_source(self, name):
         return name in self.sources
     
-    def is_sanitiser(self, name):
-        return name in self.sanitisers
+    def is_sanitiser(self, node):
+        return node in self.sanitisers
     
-    def is_sink(self, name):
-        return name in self.sinks
+    def is_sink(self, node):
+        return node in self.sinks
     
     def get_vuln_name(self):
         return self.vuln_name
@@ -30,19 +47,10 @@ class Pattern:
 
     def is_implicit(self):
         return self.implicit
-   
-class Source:
-    
-    def __init__(self, name, line):
-        self.name = name 
-        self.line = line
-    
-    def __eq__(self, other):
-        return self.name == other.name and self.line == other.line
     
 class Label:
     
-    def __init__(self, sources, sanitisers):
+    def __init__(self, sources: list[Variable], sanitisers: list[Variable]):
         self.sources = sources
         self.sanitisers = sanitisers
        
@@ -52,22 +60,28 @@ class Label:
     def get_sanitisers(self):
         return self.sanitisers.copy()
        
-    def add_source(self, source):
+    def add_source(self, source: Variable):
         self.sources.add(source)
        
     @staticmethod 
     def combine(label1, label2):
-        sources = label1.get_sources().union(label2.get_sources())
-        sanitisers = label1.sanitisers.union(label2.sanitisers)
+        sources = list_union(label1.get_sources(), label2.get_sources())
+        sanitisers = list_union(label1.get_sanitisers(), label2.get_sanitisers())
         return Label(sources, sanitisers)
 
 class MultiLabel:
     
     """Maps patterns to labels"""
     
-    def __init__(self, patterns, labels):
-        self.label_map = {pattern: label for pattern, label in zip(patterns, labels)}    
-        
+    def __init__(self, patterns: list[Pattern], labels: list[Label]):
+        self.label_map = {}
+        for pattern in patterns:
+            for label in labels:
+                label_to_pattern_sources = list_intersection(label.get_sources(), pattern.get_sources())
+                label_to_pattern_sanitisers = list_intersection(label.get_sanitisers(), pattern.get_sanitisers())
+                if len(label_to_pattern_sources) > 0 and len(label_to_pattern_sanitisers) > 0:
+                    add_to_dict(self.label_map, pattern, Label(label_to_pattern_sources, label_to_pattern_sanitisers))
+                
     def get_patterns(self):
         return list(self.label_map.keys()).copy()
         
@@ -92,7 +106,7 @@ class MultiLabel:
     
 class Policy:
     
-    def __init__(self, patterns):
+    def __init__(self, patterns: list[Pattern]):
         self.patterns = patterns
         
     def get_patterns(self):
@@ -120,7 +134,7 @@ class MultiLabelling:
     
     """Maps variables to multilabels"""
     
-    def __init__(self, variables, multilabels):
+    def __init__(self, variables: list[Variable], multilabels: list[MultiLabel]):
         self.variable_map = {variable: multilabel for variable, multilabel in zip(variables, multilabels)}
         
     def get_multilabel(self, variable):
