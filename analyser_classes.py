@@ -50,6 +50,10 @@ class Pattern:
     
 class Label:
     
+    """A Label is, in isolation, a pattern-agnostic information flow.
+       To associate it with a pattern and restrict its sources and sanitisers,
+       it must belong to a MultiLabel instance."""
+    
     def __init__(self, sources: list[Variable], sanitisers: list[Variable]):
         self.sources = sources
         self.sanitisers = sanitisers
@@ -71,7 +75,10 @@ class Label:
 
 class MultiLabel:
     
-    """Maps patterns to labels"""
+    """A MultiLabel matches a list of labels and patterns
+    using a cartesian product. In each pair, the labels'
+    sources and sanitisers are restricted to those also
+    present in the pattern, making each label"""
     
     def __init__(self, patterns: list[Pattern], labels: list[Label]):
         self.label_map = {}
@@ -132,10 +139,10 @@ class Policy:
 
 class MultiLabelling:
     
-    """Maps variables to multilabels"""
+    """Maps variables to MultiLabel instances (cartesian product?)"""
     
     def __init__(self, variables: list[Variable], multilabels: list[MultiLabel]):
-        self.variable_map = {variable: multilabel for variable, multilabel in zip(variables, multilabels)}
+        self.variable_map = {variable: multilabel for variable in variables for multilabel in multilabels}
         
     def get_multilabel(self, variable):
         return self.variable_map[variable]
