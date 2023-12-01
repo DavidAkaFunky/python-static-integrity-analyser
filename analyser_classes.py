@@ -1,10 +1,11 @@
 class Pattern:
     
-    def __init__(self, vuln_name, sources, sanitisers, sinks):
+    def __init__(self, vuln_name, sources, sanitisers, sinks, implicit):
         self.vuln_name = vuln_name
         self.sources = sources
         self.sanitisers = sanitisers
         self.sinks = sinks
+        self.implicit = implicit
         
     def is_source(self, name):
         return name in self.sources
@@ -26,6 +27,9 @@ class Pattern:
     
     def get_sinks(self):
         return self.sinks.copy()
+
+    def is_implicit(self):
+        return self.implicit
    
 class Source:
     
@@ -38,16 +42,24 @@ class Source:
     
 class Label:
     
-    def __init__(self, source, sanitisers):
-        self.source = source
+    def __init__(self, sources, sanitisers):
+        self.sources = sources
         self.sanitisers = sanitisers
+       
+    def get_sources(self):
+        return self.sources.copy()
+    
+    def get_sanitisers(self):
+        return self.sanitisers.copy()
+       
+    def add_source(self, source):
+        self.sources.add(source)
        
     @staticmethod 
     def combine(label1, label2):
-        assert label1.source == label2.source
-        source = label1.source
+        sources = label1.get_sources().union(label2.get_sources())
         sanitisers = label1.sanitisers.union(label2.sanitisers)
-        return Label(source, sanitisers)
+        return Label(sources, sanitisers)
 
 class MultiLabel:
     
@@ -66,7 +78,7 @@ class MultiLabel:
         return self.label_map.copy()
     
     def get_vulns(self):
-        return [pattern.get_vuln_name() for pattern in self.get_patterns()]
+        return [pattern.get_vuln_name() for pattern in self.patterns]
     
     @staticmethod
     def create_multilabel(label_map):
@@ -76,24 +88,27 @@ class MultiLabel:
         
     @staticmethod
     def combine(multilabel1, multilabel2):
-        return MultiLabel.create_multilabel({**multilabel1.label_map, **multilabel2.label_map})
+        return MultiLabel.create_multilabel({**multilabel1.get_label_map(), **multilabel2.get_label_map()})
     
 class Policy:
     
     def __init__(self, patterns):
         self.patterns = patterns
         
+    def get_patterns(self):
+        return self.patterns.copy()
+        
     def get_vulns(self):
-        return [pattern.vuln_name for pattern in self.patterns]
+        return [pattern.get_vuln_name() for pattern in self.patterns]
     
     def get_vulns_by_source(self, source):
-        return [pattern.vuln_name for pattern in self.patterns if pattern.is_source(source)]
+        return [pattern.get_vuln_name() for pattern in self.patterns if pattern.is_source(source)]
     
     def get_vulns_by_sanitiser(self, sanitiser):
-        return [pattern.vuln_name for pattern in self.patterns if pattern.is_sanitiser(sanitiser)]
+        return [pattern.get_vuln_name() for pattern in self.patterns if pattern.is_sanitiser(sanitiser)]
     
     def get_vulns_by_sink(self, sink):
-        return [pattern.vuln_name for pattern in self.patterns if pattern.is_sink(sink)]
+        return [pattern.get_vuln_name() for pattern in self.patterns if pattern.is_sink(sink)]
     
     @staticmethod
     def get_illegal_flows_multilabel(multilabel, sink):

@@ -1,4 +1,4 @@
-import sys
+import sys, json
 from ast import parse
 from astexport.export import export_dict
 from nodes import *
@@ -65,7 +65,6 @@ def parse_node(node):
         case _:
             raise NotImplementedError(node["ast_type"])
         
-
 def parse_ast_dict(ast_dict):
     return parse_node(ast_dict["body"])
 
@@ -76,7 +75,7 @@ if __name__ == "__main__":
         exit(1)
     
     slice_file = open(sys.argv[1], "r")
-    patterns_file = open(sys.argv[2], "r")
+    patterns = json.loads(sys.argv[2])
     
     ast_py = parse(slice_file.read())
     ast_dict = export_dict(ast_py)
