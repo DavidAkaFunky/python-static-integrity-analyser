@@ -1,20 +1,20 @@
 [
-    {"vulnerability": "SQL injection A",
-    "sources": ["get", "get_object_or_404", "QueryDict", "ContactMailForm", "ChatMessageForm"],
-    "sanitizers": ["mogrify", "escape_string"],
-    "sinks": ["execute"],
-    "implicit": "no"},
-  
-    {"vulnerability": "SQL injection B",
-    "sources": ["QueryDict", "ContactMailForm", "ChatMessageForm", "copy", "get_query_string"],
-    "sanitizers": ["mogrify", "escape_string"],
-    "sinks": ["raw", "RawSQL"],
-    "implicit": "yes"},
-  
-    {"vulnerability": "XSS",
-    "sources": ["get", "get_object_or_404", "QueryDict", "ContactMailForm", "ChatMessageForm"],
-    "sanitizers": ["clean", "escape", "flatatt", "render_template", "render", "render_to_response"],
-    "sinks": ["send_mail_jinja", "mark_safe", "Response", "Markup", "send_mail_jinja", "Raw"],
-    "implicit": "no"}
-  ]
+  {"vulnerability": "SQL injection A",
+  "sources": ["get", "get_object_or_404", "QueryDict", "ContactMailForm", "ChatMessageForm"],
+  "sanitizers": ["mogrify", "escape_string"],
+  "sinks": ["execute"],
+  "implicit": "no"},
+
+  {"vulnerability": "SQL injection B",
+  "sources": ["QueryDict", "ContactMailForm", "ChatMessageForm", "copy", "get_query_string"],
+  "sanitizers": ["mogrify", "escape_string"],
+  "sinks": ["raw", "RawSQL"],
+  "implicit": "yes"},
+
+  {"vulnerability": "XSS",
+  "sources": ["get", "get_object_or_404", "QueryDict", "ContactMailForm", "ChatMessageForm"],
+  "sanitizers": ["clean", "escape", "flatatt", "render_template", "render", "render_to_response"],
+  "sinks": ["send_mail_jinja", "mark_safe", "Response", "Markup", "send_mail_jinja", "Raw"],
+  "implicit": "no"}
+]
   
