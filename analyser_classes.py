@@ -101,6 +101,9 @@ class MultiLabel:
     def get_vulns(self):
         return [pattern.get_vuln_name() for pattern in self.patterns]
     
+    def get_label(self, pattern):
+        return self.label_map[pattern].copy()
+    
     @staticmethod
     def create_multilabel(label_map):
         multilabel = MultiLabel([], [])
@@ -109,7 +112,14 @@ class MultiLabel:
         
     @staticmethod
     def combine(multilabel1, multilabel2):
-        return MultiLabel.create_multilabel({**multilabel1.get_label_map(), **multilabel2.get_label_map()})
+        label_map = {}
+        for pattern in multilabel1:
+            if pattern in multilabel2:
+                label_map[pattern] = Label.combine(multilabel1[pattern], multilabel2[pattern])
+            else:
+                label_map[pattern] = multilabel1.get_label(pattern)
+        label_map += {pattern: multilabel2.get_label(pattern) for pattern in multilabel2 if pattern not in multilabel1}
+        return MultiLabel.create_multilabel(label_map)
     
 class Policy:
     
