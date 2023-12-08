@@ -76,9 +76,9 @@ class Label:
 class MultiLabel:
     
     """A MultiLabel matches a list of labels and patterns
-    using a cartesian product. In each pair, the labels'
-    sources and sanitisers are restricted to those also
-    present in the pattern, making each label"""
+    using a cartesian product.
+       In each pair, the labels' sources and sanitisers
+    are restricted to those also present in the pattern."""
     
     def __init__(self, patterns: list[Pattern], labels: list[Label]):
         self.label_map = {}
@@ -115,7 +115,7 @@ class MultiLabel:
         label_map = {}
         for pattern in multilabel1:
             if pattern in multilabel2:
-                label_map[pattern] = Label.combine(multilabel1[pattern], multilabel2[pattern])
+                label_map[pattern] = Label.combine(multilabel1.get_label(pattern), multilabel2.get_label(pattern))
             else:
                 label_map[pattern] = multilabel1.get_label(pattern)
         label_map += {pattern: multilabel2.get_label(pattern) for pattern in multilabel2 if pattern not in multilabel1}
@@ -149,10 +149,16 @@ class Policy:
 
 class MultiLabelling:
     
-    """Maps variables to MultiLabel instances (cartesian product?)"""
+    """Maps variables to MultiLabel instances"""
     
-    def __init__(self, variables: list[Variable], multilabels: list[MultiLabel]):
-        self.variable_map = {variable: multilabel for variable in variables for multilabel in multilabels}
+    def __init__(self):
+        self.variable_map = {}
+        
+    def add_multilabel(self, variable, multilabel):
+        if variable in self.variable_map:
+            self.variable_map[variable] = multilabel
+        else:
+            self.variable_map[variable] = MultiLabel.combine(self.variable_map[variable], multilabel)
         
     def get_multilabel(self, variable):
         return self.variable_map[variable]
@@ -162,6 +168,9 @@ class MultiLabelling:
         
         
 class Vulnerabilities:
+    
+    """Maps a vulnerability to a list of multilabels
+    with that vulnerability."""
     
     def __init__(self):
         self.vulnerabilities = {}
