@@ -11,7 +11,7 @@ if __name__ == "__main__":
     
     with open(sys.argv[2], "r") as f:
         patterns = json.load(f)
-    
+    print(patterns)
     ast_py = ast.parse(slice_file.read())
-    visitor = ASTVisitor()
+    visitor = ASTVisitor(patterns)
     visitor.visit(ast_py)
