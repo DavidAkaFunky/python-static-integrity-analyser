@@ -64,6 +64,9 @@ class Label:
        
     def add_source(self, source: Variable):
         self.sources.add(source)
+
+    def add_sanitiser(self, sanitiser: Variable):
+        self.sanitisers.add(sanitiser)
        
     @staticmethod 
     def combine(label1, label2):
@@ -166,6 +169,22 @@ class MultiLabelling:
     
     def set_multilabel(self, variable, multilabel):
         self.variable_map[variable] = multilabel
+
+    def copy(self):
+        new_multilabelling = MultiLabelling()
+        for variable in self.variable_map:
+            new_multilabelling.set_multilabel(variable, self.variable_map[variable])
+        return new_multilabelling
+    
+    @staticmethod
+    def combine(multilabelling1, multilabelling2):
+        new_multilabelling = multilabelling1.copy()
+        for variable in multilabelling2.variable_map:
+            if variable in new_multilabelling.variable_map:
+                new_multilabelling.set_multilabel(variable, MultiLabel.combine(new_multilabelling.get_multilabel(variable), multilabelling2.get_multilabel(variable)))
+            else:
+                new_multilabelling.set_multilabel(variable, multilabelling2.get_multilabel(variable))
+        return new_multilabelling
         
         
 class Vulnerabilities:
