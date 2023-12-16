@@ -1,14 +1,14 @@
-from ast import NodeVisitor
+import ast
 from analyser_classes import *
 from functools import reduce
 
-class ASTVisitor(NodeVisitor):
+class ASTVisitor(ast.NodeVisitor):
    
-	def __init__(self, patterns: list[Pattern]):
-		self.policy = Policy(patterns)
+	def __init__(self, patterns):
+		self.policy = Policy([Pattern.from_json(pattern) for pattern in patterns])
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
-		self.multilabel_stack = []
+		self.stack = []
    
 	########### EXPRESSIONS ###########
 	
@@ -18,10 +18,8 @@ class ASTVisitor(NodeVisitor):
 		(also known as the walrus operator).
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
-		print(node.ctx)
-		if node.ctx == "Load":
-			self.multilabel_stack.append(self.multilabelling.get_multilabel(node.id))
-			
+		pass
+   			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
 		   op is the operator, and left and right are any expression nodes."""
@@ -55,16 +53,56 @@ class ASTVisitor(NodeVisitor):
 		   - args holds a list of the arguments passed by position.
 		   - keywords holds a list of keyword objects representing arguments passed by keyword.
 		   When creating a Call node, args and keywords are required, but they can be empty lists."""
-     
+
+		self.visit(node.func)
+		if isinstance(node.func, ast.Name):
+			func = node.func.id
+		elif isinstance(node.func, ast.Attribute):
+			func = node.func.attr
+		else:
+			raise Exception("Function call not supported")
+
+		args = node.args + node.keywords
+		args_nodes = []
+  
+		for arg in args:
+			self.visit(arg)
+			if isinstance(arg, ast.Name):
+				args_nodes.append(Node(arg.id, node.lineno))
+			elif isinstance(arg, ast.Attribute):
+				args_nodes.append(Node(arg.attr, node.lineno))
+			else:
+				raise Exception("Function call not supported")
 		
+		func_variable = Node(func, node.lineno)
+		multilabel_source = MultiLabel(self.policy.get_patterns_by_source(func), Label({func_variable}, [[]]))
+		multilabel_sanitiser = MultiLabel(self.policy.get_patterns_by_sanitiser(func), Label(set(), [[func_variable]]))
+		multilabelling = MultiLabelling()
+
+		for arg_node in args_nodes:
+			# TODO Maybe check (somehow) if the argument is a value or a reference
+			arg_name = arg_node.get_name()
+			multilabelling.add_multilabel(arg_name, multilabel_source)
+			multilabelling.add_multilabel(arg_name, multilabel_sanitiser)
+			if arg_name in self.multilabelling.get_variable_map():	
+				self.vulnerabilities.add_vulnerability(self.policy, self.multilabelling.get_multilabel(arg_name), func_variable)
+   
+		self.multilabelling = MultiLabelling.combine(self.multilabelling, multilabelling)
+  
+		for arg_node in args_nodes:
+			if arg_node.get_name() in self.multilabelling.get_variable_map():
+				self.stack.append(self.multilabelling.get_multilabel(arg_node.get_name()))
+   
+		self.stack.append(multilabel_source)
+		self.stack.append(multilabel_sanitiser)
 			
 	def visit_Attribute(self, node):
 		"""Attribute access, e.g. d.keys.
 		   value is a node, typically a Name.
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
-		# Might not be great, since the vunlerability is added to the attribute, not the value
-		self.visit(node.value)
+		# Might not be great, since the vulnerability is added to the attribute, not the value
+		pass
 			
 	########### STATEMENTS ###########
 		
@@ -74,24 +112,25 @@ class ASTVisitor(NodeVisitor):
 		it is wrapped in this container.
 		   value holds one of the other nodes in this section, 
 		a Constant, a Name, a Lambda, a Yield or YieldFrom node."""
-		new_multilabel = MultiLabel()
-		initial_stack_size = len(self.multilabel_stack)
 		self.visit(node.value)
-		while len(self.multilabel_stack) > initial_stack_size:
-			new_multilabel = MultiLabel.combine(new_multilabel, self.multilabel_stack.pop())
-		self.vulnerabilities.add_vulnerability(reduce(MultiLabel.combine, self.multilabel_stack), node.func)
 		
 	def visit_Assign(self, node):
 		"""An assignment. targets is a list of nodes, and value is a single node.
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
-		initial_stack_size = len(self.multilabel_stack)
-		self.visit(node.value)
-		if len(self.multilabel_stack) == initial_stack_size:
-			return
-		new_multilabel = self.multilabel_stack.pop()
 		for target in node.targets:
-			self.multilabelling.set_multilabel(target.id, new_multilabel)
+			self.visit(target)
+		self.visit(node.value)
+		while len(self.stack) > 0:
+			multilabel = self.stack.pop()
+			for target in node.targets:
+				if isinstance(target, ast.Name):
+					target_name = target.id
+				elif isinstance(target, ast.Attribute):
+					target_name = target.attr
+				else:
+					raise Exception("Function call not supported")
+				self.multilabelling.add_multilabel(target_name, multilabel)
 			
 	def visit_If(self, node):
 		"""An if statement.
