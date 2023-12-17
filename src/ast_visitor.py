@@ -8,7 +8,6 @@ class ASTVisitor(ast.NodeVisitor):
 		self.policy = Policy([Pattern.from_json(pattern) for pattern in patterns])
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
-		self.stack = []
    
 	########### EXPRESSIONS ###########
 	
@@ -18,7 +17,11 @@ class ASTVisitor(ast.NodeVisitor):
 		(also known as the walrus operator).
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
-		pass
+		multilabel = MultiLabel.create_empty()
+		
+		if not self.multilabelling.is_variable_initialised(node.id):
+			multilabel = MultiLabel.combine(multilabel, MultiLabel.create_for_uninitialised_variable(self.policy, Node(node.id, node.lineno)))
+
    			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).

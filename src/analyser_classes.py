@@ -71,27 +71,36 @@ class Label:
        To associate it with a pattern and restrict its sources and sanitisers,
        it must belong to a MultiLabel instance."""
     
-    def __init__(self, sources: set[Node], sanitisers: list[list[Node]]):
-        self.sources = sources
-        self.sanitisers = sanitisers
+    def __init__(self, source: Node):
+        self.pairs = [[source, []]]
        
-    def get_sources(self):
-        return deepcopy(self.sources)
+    def get_pairs(self):
+        return deepcopy(self.pairs)
     
-    def get_sanitisers(self):
-        return deepcopy(self.sanitisers)
-       
-    def add_source(self, source: Node):
-        self.sources.add(source)
+    def sanitise(self, sanitiser: Node):
+        for pair in self.pairs:
+            pair[1].append(sanitiser)
+            
+    def add_pair(self, pair):
+        self.pairs.append(pair)
+        
+    def get_copy(self):
+        return deepcopy(self)
         
     def __repr__(self):
         return [self.sources, self.sanitisers].__repr__()
+    
+    @staticmethod
+    def empty():
+        new_label = Label()
+        new_label.pairs = []
+        return new_label
        
     @staticmethod 
     def combine(label1, label2):
-        sources = label1.get_sources().union(label2.get_sources())
-        sanitisers = label1.get_sanitisers() + label2.get_sanitisers()
-        return Label(sources, sanitisers)
+        new_label = label1.get_copy()
+        new_label.pairs += label2.get_pairs()
+        return new_label
 
 class MultiLabel:
     
@@ -100,15 +109,21 @@ class MultiLabel:
        In each pair, the labels' sources and sanitisers
     are restricted to those also present in the pattern."""
     
-    def __init__(self, patterns, label: Node):
-        self.label_map = {}
+    def __init__(self, patterns, labels):
+        self.label_map = dict()
         for pattern in patterns:
-            label_to_pattern_sources = [source for source in label.get_sources() if pattern.is_source(source.get_name())]
-            label_to_pattern_sanitisers = [[sanitiser for sanitiser in sanitiser_list if pattern.is_sanitiser(sanitiser.get_name())] for sanitiser_list in label.get_sanitisers()]
-            if len(label_to_pattern_sources) > 0:
-                vuln_name = pattern.get_vuln_name()
-                self.label_map[vuln_name] = Label(label_to_pattern_sources, label_to_pattern_sanitisers)
-                
+            for label in labels:
+                new_label = Label.empty()
+                for pair in label.get_pairs():
+                    if pair[0] in pattern.get_sources():
+                        new_label.add_pair([pair[0], [s for s in pair[1] if pattern.is_sanitiser(s)]])
+                if len(new_label.pairs) > 0:
+                    vuln_name = pattern.get_vuln_name()
+                    if vuln_name in self.label_map:
+                        self.label_map[vuln_name] = [new_label]
+                    else:
+                        self.label_map[vuln_name] = new_label
+         
     def get_vulns(self):
         return set(self.label_map.keys())
         
@@ -129,6 +144,17 @@ class MultiLabel:
     
     def __repr__(self):
         return self.label_map.__repr__()
+    
+    @staticmethod
+    def create_empty():
+        return MultiLabel([], None)
+    
+    @staticmethod
+    def create_for_uninitialised_variable(policy: Policy, node: Node):
+        new_multilabel = MultiLabel.create_empty()
+        label = Label(node)
+        for vuln_name in policy.get_vulns():
+            new_multilabel[vuln_name] = label
 
     @staticmethod
     def combine(multilabel1, multilabel2):
@@ -192,6 +218,9 @@ class MultiLabelling:
     def get_variable_map(self):
         return self.variable_map
     
+    def is_variable_initialised(self, variable: str):
+        return variable in self.variable_map
+    
     def get_multilabel(self, variable):
         return deepcopy(self.variable_map[variable])
     
@@ -249,16 +278,15 @@ class Vulnerabilities:
         """
         output = []
         for vuln_name in self.vulnerabilities:
-            label = self.vulnerabilities[vuln_name][0].get_label(vuln_name)
+            label = self.vulnerabilities[vuln_name][0].get_pairs()
             sink = self.vulnerabilities[vuln_name][1]
-            sanitisers = label.get_sanitisers()
-            for i, source in enumerate(label.get_sources()):
+            for i, source in enumerate(label.keys()):
                 vuln = {}
                 vuln["vulnerability"] = vuln_name + "_" + str(i+1)
                 vuln["source"] = source
                 vuln["sink"] = sink
-                vuln["unsanitized_flows"] = "yes" if any([len(flow) == 0 for flow in sanitisers]) else "no"
-                vuln["sanitized_flows"] = [flow for flow in sanitisers if len(flow) > 0]
+                vuln["unsanitized_flows"] = "yes" if any([len(flow) == 0 for flow in label[source]]) else "no"
+                vuln["sanitized_flows"] = [flow for flow in label[source] if len(flow) > 0]
                 output.append(vuln)
 
         return json.dumps(str(output))
