@@ -88,7 +88,7 @@ class Label:
         return deepcopy(self)
         
     def __repr__(self):
-        return [self.sources, self.sanitisers].__repr__()
+        return [pair for pair in self.pairs].__repr__()
     
     @staticmethod
     def empty():
@@ -141,6 +141,9 @@ class MultiLabel:
     
     def get_copy(self):
         return deepcopy(self)
+    
+    def is_empty(self):
+        return len(self.label_map) == 0
     
     def __repr__(self):
         return self.label_map.__repr__()

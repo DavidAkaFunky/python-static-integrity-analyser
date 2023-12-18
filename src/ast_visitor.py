@@ -19,9 +19,15 @@ class ASTVisitor(ast.NodeVisitor):
 		in this case both target and value must be single nodes."""
 		multilabel = MultiLabel.create_empty()
 		
-		if not self.multilabelling.is_variable_initialised(node.id):
-			multilabel = MultiLabel.combine(multilabel, MultiLabel.create_for_uninitialised_variable(self.policy, Node(node.id, node.lineno)))
-
+		if self.multilabelling.is_variable_initialised(node.id):
+			multilabel = self.multilabelling.get_multilabel(node.id)
+			return multilabel
+		else:
+			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), Label({node.id}, [[]]))
+			if not multilabel.is_empty() or self.policy.is_sanitiser(node.id):
+				return multilabel
+			else:
+				return MultiLabel.create_empty()
    			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
@@ -104,8 +110,14 @@ class ASTVisitor(ast.NodeVisitor):
 		   value is a node, typically a Name.
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
-		# Might not be great, since the vulnerability is added to the attribute, not the value
-		pass
+		self.visit(node.attr)
+		## WORK IN PROGRESS (not sure yet)
+		if isinstance(node.value, ast.Name):
+			self.multilabelling.add_multilabel(node.value.id, self.multilabelling.get_multilabel(node.attr))
+		multilabel = self.visit(node.value)
+		new_multilabel = MultiLabel.combine(multilabel, self.multilabelling.get_multilabel(node.attr))
+		return new_multilabel
+		
 			
 	########### STATEMENTS ###########
 		
