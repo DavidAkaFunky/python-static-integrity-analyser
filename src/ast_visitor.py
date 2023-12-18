@@ -110,12 +110,14 @@ class ASTVisitor(ast.NodeVisitor):
 		   value is a node, typically a Name.
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
-		self.visit(node.attr)
+		multilabel_attr = self.visit(node.attr)
 		## WORK IN PROGRESS (not sure yet)
 		if isinstance(node.value, ast.Name):
-			self.multilabelling.add_multilabel(node.value.id, self.multilabelling.get_multilabel(node.attr))
+			for label in multilabel_attr.get_labels():
+				for pair in label.get_pairs():
+					label.add_pair([node.value.id, pair[1]])
 		multilabel = self.visit(node.value)
-		new_multilabel = MultiLabel.combine(multilabel, self.multilabelling.get_multilabel(node.attr))
+		new_multilabel = MultiLabel.combine(multilabel, multilabel_attr)
 		return new_multilabel
 		
 			
