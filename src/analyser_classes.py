@@ -71,35 +71,38 @@ class Label:
        To associate it with a pattern and restrict its sources and sanitisers,
        it must belong to a MultiLabel instance."""
     
-    def __init__(self, source: Node):
-        self.pairs = [[source, []]]
+    def __init__(self, source=None):
+        # Is a set adequate? Maybe repeated elements are okay
+        self.pairs = set()
+        if source is not None:
+            self.add_pair([source, [[]]])
        
     def get_pairs(self):
         return deepcopy(self.pairs)
     
     def sanitise(self, sanitiser: Node):
         for pair in self.pairs:
-            pair[1].append(sanitiser)
+            pair[1].add(sanitiser)
             
     def add_pair(self, pair):
-        self.pairs.append(pair)
+        self.pairs.add(pair)
         
     def get_copy(self):
         return deepcopy(self)
         
     def __repr__(self):
-        return [pair for pair in self.pairs].__repr__()
+        return list(self.pairs).__repr__()
     
     @staticmethod
-    def empty():
+    def create_empty():
         new_label = Label()
         new_label.pairs = []
         return new_label
        
     @staticmethod 
     def combine(label1, label2):
-        new_label = label1.get_copy()
-        new_label.pairs += label2.get_pairs()
+        new_label = Label.create_empty()
+        new_label.pairs = label1.get_pairs().union(label2.get_pairs())
         return new_label
 
 class MultiLabel:
@@ -113,10 +116,10 @@ class MultiLabel:
         self.label_map = dict()
         for pattern in patterns:
             for label in labels:
-                new_label = Label.empty()
+                new_label = Label.create_empty()
                 for pair in label.get_pairs():
-                    if pair[0] in pattern.get_sources():
-                        new_label.add_pair([pair[0], [s for s in pair[1] if pattern.is_sanitiser(s)]])
+                    if pair[0].get_name() in pattern.get_sources():
+                        new_label.add_pair([pair[0], [s for s in pair[1] if pattern.is_sanitiser(s.get_name())]])
                 if len(new_label.pairs) > 0:
                     vuln_name = pattern.get_vuln_name()
                     if vuln_name in self.label_map:

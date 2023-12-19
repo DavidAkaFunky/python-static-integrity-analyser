@@ -18,16 +18,17 @@ class ASTVisitor(ast.NodeVisitor):
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
 		multilabel = MultiLabel.create_empty()
-		
+		simple_node = Node(node.id, node.lineno)
 		if self.multilabelling.is_variable_initialised(node.id):
 			multilabel = self.multilabelling.get_multilabel(node.id)
-			return multilabel
-		else:
-			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), Label({node.id}, [[]]))
+			return simple_node, multilabel
+		else: # Uninitialised variable, counts as source
+			# If our multilabel constructor is correct, we can send self.policy as the 1st argument instead
+			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), Label(simple_node))
 			if not multilabel.is_empty() or self.policy.is_sanitiser(node.id):
-				return multilabel
+				return simple_node, multilabel
 			else:
-				return MultiLabel.create_empty()
+				return simple_node, MultiLabel.create_empty()
    			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
@@ -63,47 +64,14 @@ class ASTVisitor(ast.NodeVisitor):
 		   - keywords holds a list of keyword objects representing arguments passed by keyword.
 		   When creating a Call node, args and keywords are required, but they can be empty lists."""
 
-		self.visit(node.func)
-		if isinstance(node.func, ast.Name):
-			func = node.func.id
-		elif isinstance(node.func, ast.Attribute):
-			func = node.func.attr
-		else:
-			raise Exception("Function call not supported")
+		func_variable, return_multilabel = self.visit(node.func)
 
-		args = node.args + node.keywords
-		args_nodes = []
-  
-		for arg in args:
-			self.visit(arg)
-			if isinstance(arg, ast.Name):
-				args_nodes.append(Node(arg.id, node.lineno))
-			elif isinstance(arg, ast.Attribute):
-				args_nodes.append(Node(arg.attr, node.lineno))
-			else:
-				raise Exception("Function call not supported")
-		
-		func_variable = Node(func, node.lineno)
-		multilabel_source = MultiLabel(self.policy.get_patterns_by_source(func), Label({func_variable}, [[]]))
-		multilabel_sanitiser = MultiLabel(self.policy.get_patterns_by_sanitiser(func), Label(set(), [[func_variable]]))
-		multilabelling = MultiLabelling()
+		for arg in node.args + node.keywords:
+			_, arg_multilabel = self.visit(arg)
+			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
+			self.vulnerabilities.add_vulnerability(self.policy, arg_multilabel, func_variable)
 
-		for arg_node in args_nodes:
-			# TODO Maybe check (somehow) if the argument is a value or a reference
-			arg_name = arg_node.get_name()
-			multilabelling.add_multilabel(arg_name, multilabel_source)
-			multilabelling.add_multilabel(arg_name, multilabel_sanitiser)
-			if arg_name in self.multilabelling.get_variable_map():	
-				self.vulnerabilities.add_vulnerability(self.policy, self.multilabelling.get_multilabel(arg_name), func_variable)
-   
-		self.multilabelling = MultiLabelling.combine(self.multilabelling, multilabelling)
-  
-		for arg_node in args_nodes:
-			if arg_node.get_name() in self.multilabelling.get_variable_map():
-				self.stack.append(self.multilabelling.get_multilabel(arg_node.get_name()))
-   
-		self.stack.append(multilabel_source)
-		self.stack.append(multilabel_sanitiser)
+		return func_variable, return_multilabel
 			
 	def visit_Attribute(self, node):
 		"""Attribute access, e.g. d.keys.
@@ -112,13 +80,13 @@ class ASTVisitor(ast.NodeVisitor):
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
 		multilabel_attr = self.visit(node.attr)
 		## WORK IN PROGRESS (not sure yet)
-		if isinstance(node.value, ast.Name):
+		if type(node.value) == ast.Name:
 			for label in multilabel_attr.get_labels():
 				for pair in label.get_pairs():
 					label.add_pair([node.value.id, pair[1]])
-		multilabel = self.visit(node.value)
+		_, multilabel = self.visit(node.value)
 		new_multilabel = MultiLabel.combine(multilabel, multilabel_attr)
-		return new_multilabel
+		return node.value, new_multilabel
 		
 			
 	########### STATEMENTS ###########
@@ -135,19 +103,7 @@ class ASTVisitor(ast.NodeVisitor):
 		"""An assignment. targets is a list of nodes, and value is a single node.
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
-		for target in node.targets:
-			self.visit(target)
-		self.visit(node.value)
-		while len(self.stack) > 0:
-			multilabel = self.stack.pop()
-			for target in node.targets:
-				if isinstance(target, ast.Name):
-					target_name = target.id
-				elif isinstance(target, ast.Attribute):
-					target_name = target.attr
-				else:
-					raise Exception("Function call not supported")
-				self.multilabelling.add_multilabel(target_name, multilabel)
+		pass # TODO
 			
 	def visit_If(self, node):
 		"""An if statement.
