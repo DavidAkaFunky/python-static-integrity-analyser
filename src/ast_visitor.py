@@ -17,15 +17,17 @@ class ASTVisitor(ast.NodeVisitor):
 		(also known as the walrus operator).
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
+  
 		multilabel = MultiLabel.create_empty()
 		simple_node = Node(node.id, node.lineno)
+  
 		if self.multilabelling.is_variable_initialised(node.id):
-			multilabel = self.multilabelling.get_multilabel(node.id)
-			return simple_node, multilabel
+			return simple_node, self.multilabelling.get_multilabel(node.id)
+
 		else: # Uninitialised variable, counts as source
 			# If our multilabel constructor is correct, we can send self.policy as the 1st argument instead
-			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), Label(simple_node))
-			if not multilabel.is_empty() or self.policy.is_sanitiser(node.id):
+			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), [Label(simple_node)])
+			if not multilabel.is_empty() or len(self.policy.get_vulns_by_sanitiser(node.id)) != 0:
 				return simple_node, multilabel
 			else:
 				return simple_node, MultiLabel.create_empty()
@@ -33,12 +35,16 @@ class ASTVisitor(ast.NodeVisitor):
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
 		   op is the operator, and left and right are any expression nodes."""
-		self.visit(node.left)
-		self.visit(node.right)
+     
+		_, left_multilabel = self.visit(node.left)
+		_, right_multilabel = self.visit(node.right)
+		return None, MultiLabel.combine(left_multilabel, right_multilabel)
 			
 	def visit_UnaryOp(self, node):
 		"""A unary operation. op is the operator, and operand any expression node."""
-		self.visit(node.operand)
+  
+		_, multiLabel = self.visit(node.operand)
+		return None, multiLabel
 			
 	def visit_BoolOp(self, node):
 		"""A boolean operation, 'or' or 'and'. op is Or or And.
@@ -46,16 +52,23 @@ class ASTVisitor(ast.NodeVisitor):
 		   Consecutive operations with the same operator, such as a or b or c,
 		are collapsed into one node with several values.
 		   This doesn't include not, which is a UnaryOp."""
+     
+		multilabel = MultiLabel.create_empty()
 		for value in node.values:
-			self.visit(value)
+			_, value_multilabel = self.visit(value)
+			multilabel = MultiLabel.combine(multilabel, value_multilabel)
+		return None, multilabel
 			
 	def visit_Compare(self, node):
 		"""A comparison of two or more values.
 		   left is the first value in the comparison, ops the list of operators,
 		and comparators the list of values after the first element in the comparison."""
-		self.visit(node.left)
+  
+		_, multilabel = self.visit(node.left)
 		for comparator in node.comparators:
-			self.visit(comparator)
+			_, cmp_multilabel = self.visit(comparator)
+			multilabel = MultiLabel.combine(multilabel, cmp_multilabel)
+		return None, multilabel
 			
 	def visit_Call(self, node):
 		"""A function call.
@@ -78,7 +91,9 @@ class ASTVisitor(ast.NodeVisitor):
 		   value is a node, typically a Name.
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
+  
 		multilabel_attr = self.visit(node.attr)
+  
 		## WORK IN PROGRESS (not sure yet)
 		if type(node.value) == ast.Name:
 			for label in multilabel_attr.get_labels():
@@ -86,7 +101,8 @@ class ASTVisitor(ast.NodeVisitor):
 					label.add_pair([node.value.id, pair[1]])
 		_, multilabel = self.visit(node.value)
 		new_multilabel = MultiLabel.combine(multilabel, multilabel_attr)
-		return node.value, new_multilabel
+  
+		return Node(node.value, node.lineno), new_multilabel
 		
 			
 	########### STATEMENTS ###########
@@ -97,14 +113,40 @@ class ASTVisitor(ast.NodeVisitor):
 		it is wrapped in this container.
 		   value holds one of the other nodes in this section, 
 		a Constant, a Name, a Lambda, a Yield or YieldFrom node."""
-		self.visit(node.value)
+  
+		_, multilabel = self.visit(node.value)
+		return None, multilabel
 		
 	def visit_Assign(self, node):
 		"""An assignment. targets is a list of nodes, and value is a single node.
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
-		pass # TODO
-			
+
+		value = self.visit(node.value)
+		print(value)
+		if value is None:
+			return None, None
+		value_variable, value_multilabel = value
+		targets = []
+  
+		for target in node.targets:
+			# Converting to iterable to allow return unpacking
+			# If it's a tuple, visit may return a list of (name, multilabel)
+			# Otherwise, it returns just a (name, multilabel),
+			# so making it a list allows concatenation of the results
+			target_result = self.visit(target)
+			if type(target_result) != list:
+				target_result = [target_result]
+			targets += target_result
+		print(targets)
+		for target_node, target_multilabel in targets:
+			target_multilabel = MultiLabel.combine(value_multilabel, target_multilabel)
+			target_multilabel.sanitise(self.policy, value_variable)
+			self.vulnerabilities.add_vulnerability(self.policy, target_multilabel, value_variable)
+			self.multilabelling.set_multilabel(target_node.get_name(), target_multilabel)
+		print("_______________")
+		return None, None
+   
 	def visit_If(self, node):
 		"""An if statement.
 		   test holds a single node, such as a Compare node.
