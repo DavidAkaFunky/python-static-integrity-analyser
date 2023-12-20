@@ -18,27 +18,33 @@ class ASTVisitor(ast.NodeVisitor):
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
   
-		multilabel = MultiLabel.create_empty()
 		simple_node = Node(node.id, node.lineno)
-  
+		multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), [Label(simple_node)])
+		
 		if self.multilabelling.is_variable_initialised(node.id):
-			return simple_node, self.multilabelling.get_multilabel(node.id)
+			return simple_node, MultiLabel.combine(self.multilabelling.get_multilabel(node.id), multilabel)
 
-		else: # Uninitialised variable, counts as source
-			# If our multilabel constructor is correct, we can send self.policy as the 1st argument instead
-			multilabel = MultiLabel(self.policy.get_patterns_by_source(node.id), [Label(simple_node)])
-			if not multilabel.is_empty() or len(self.policy.get_vulns_by_sanitiser(node.id)) != 0:
-				return simple_node, multilabel
-			else:
-				return simple_node, MultiLabel.create_empty()
+		# Uninitialised variable -> Check if source or sanitiser
+		if not multilabel.is_empty() or len(self.policy.get_vulns_by_sanitiser(node.id)) != 0:
+			return simple_node, multilabel
+
+		# It's neither, return multilabel where it's a source in all patterns
+		return simple_node, MultiLabel.create_for_uninitialised_variable(self.policy, simple_node)
    			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
 		   op is the operator, and left and right are any expression nodes."""
-     
-		_, left_multilabel = self.visit(node.left)
-		_, right_multilabel = self.visit(node.right)
-		return None, MultiLabel.combine(left_multilabel, right_multilabel)
+
+		left = self.visit(node.left)
+		if left is None:
+			left_multilabel = MultiLabel.create_empty()
+		else:
+			left_multilabel = left[1]
+   
+		right = self.visit(node.right)
+		if right is None:
+			return None, left_multilabel
+		return None, MultiLabel.combine(left_multilabel, right[1])
 			
 	def visit_UnaryOp(self, node):
 		"""A unary operation. op is the operator, and operand any expression node."""
@@ -76,13 +82,19 @@ class ASTVisitor(ast.NodeVisitor):
 		   - args holds a list of the arguments passed by position.
 		   - keywords holds a list of keyword objects representing arguments passed by keyword.
 		   When creating a Call node, args and keywords are required, but they can be empty lists."""
+  
+		func_variable, _ = self.visit(node.func)
+		return_multilabel = MultiLabel(self.policy.get_patterns_by_source(func_variable.get_name()), [Label(func_variable)])
 
-		func_variable, return_multilabel = self.visit(node.func)
-
-		for arg in node.args + node.keywords:
-			_, arg_multilabel = self.visit(arg)
+		for arg_node in node.args + node.keywords:
+			arg = self.visit(arg_node)
+			if arg is None:
+				continue
+			_, arg_multilabel = arg
 			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
-			self.vulnerabilities.add_vulnerability(self.policy, arg_multilabel, func_variable)
+		
+		return_multilabel.sanitise(self.policy, func_variable)
+		self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
 
 		return func_variable, return_multilabel
 			
@@ -92,17 +104,22 @@ class ASTVisitor(ast.NodeVisitor):
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
   
-		multilabel_attr = self.visit(node.attr)
+		# FIXME Maybe return a list containing:
+		# [(value_node, value_multilabel), (value_and_attr_node, value_and_attr_multilabel)]
+
+		value_node, value_multilabel = self.visit(node.value)
+		attr_node = Node(node.attr, node.lineno)
   
-		## WORK IN PROGRESS (not sure yet)
-		if type(node.value) == ast.Name:
-			for label in multilabel_attr.get_labels():
-				for pair in label.get_pairs():
-					label.add_pair([node.value.id, pair[1]])
-		_, multilabel = self.visit(node.value)
-		new_multilabel = MultiLabel.combine(multilabel, multilabel_attr)
+		attr_multilabel = MultiLabel(self.policy.get_patterns_by_source(node.attr), [Label(attr_node)])
+		if self.multilabelling.is_variable_initialised(node.attr):
+			attr_multilabel = self.multilabelling.get_multilabel(node.attr)
+
+		# Uninitialised variable -> Check if source or sanitiser
+		if attr_multilabel.is_empty() and len(self.policy.get_vulns_by_sanitiser(node.attr)) == 0:
+			attr_multilabel = MultiLabel.create_for_uninitialised_variable(self.policy, attr_node)
   
-		return Node(node.value, node.lineno), new_multilabel
+		value_node.add_attribute(node.attr)
+		return value_node, MultiLabel.combine(value_multilabel, attr_multilabel)
 		
 			
 	########### STATEMENTS ###########
@@ -122,29 +139,32 @@ class ASTVisitor(ast.NodeVisitor):
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
 
+		#print(type(node.value))
 		value = self.visit(node.value)
-		print(value)
+		#print(value)
 		if value is None:
-			return None, None
-		value_variable, value_multilabel = value
+			value_multilabel = MultiLabel.create_empty()
+		else:
+			_, value_multilabel = value
 		targets = []
-  
+
 		for target in node.targets:
 			# Converting to iterable to allow return unpacking
 			# If it's a tuple, visit may return a list of (name, multilabel)
 			# Otherwise, it returns just a (name, multilabel),
 			# so making it a list allows concatenation of the results
+			#print(type(target))
 			target_result = self.visit(target)
 			if type(target_result) != list:
 				target_result = [target_result]
 			targets += target_result
-		print(targets)
-		for target_node, target_multilabel in targets:
-			target_multilabel = MultiLabel.combine(value_multilabel, target_multilabel)
-			target_multilabel.sanitise(self.policy, value_variable)
-			self.vulnerabilities.add_vulnerability(self.policy, target_multilabel, value_variable)
-			self.multilabelling.set_multilabel(target_node.get_name(), target_multilabel)
-		print("_______________")
+   
+		for target_node, _ in targets:
+			#print(target_node, target_multilabel)
+			self.vulnerabilities.add_vulnerability(self.policy, value_multilabel, target_node)
+			self.multilabelling.set_multilabel(target_node.get_name(), value_multilabel)
+			#print(self.multilabelling)
+		#print("_______________")
 		return None, None
    
 	def visit_If(self, node):
