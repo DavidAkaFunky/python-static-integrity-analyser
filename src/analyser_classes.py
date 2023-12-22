@@ -217,10 +217,21 @@ class Policy:
     def get_vulns_by_sink(self, node):
         return set(pattern.get_vuln_name() for pattern in self.patterns if pattern.is_sink(node))
     
+    def get_non_sink_vulns(self, node):
+        return set(pattern.get_vuln_name() for pattern in self.patterns if not pattern.is_sink(node))
+    
+    def get_non_implicit_vulns(self):
+        return set(pattern.get_vuln_name() for pattern in self.patterns if not pattern.is_implicit())
+    
     def get_illegal_flows_multilabel(self, multilabel, node):
         new_multilabel = multilabel.get_copy()
-        print(new_multilabel.get_vulns(), node.get_name(), self.get_vulns_by_sink(node.get_name()))
-        for vuln_name in new_multilabel.get_vulns().difference(self.get_vulns_by_sink(node.get_name())):
+        for vuln_name in new_multilabel.get_vulns().intersect(self.get_non_sink_vulns(node.get_name())):
+            del new_multilabel.label_map[vuln_name]
+        return new_multilabel
+    
+    def get_implicit_patterns_multilabel(self, multilabel):
+        new_multilabel = multilabel.get_copy()
+        for vuln_name in new_multilabel.get_vulns().intersect(self.get_non_implicit_vulns()):
             del new_multilabel.label_map[vuln_name]
         return new_multilabel
     

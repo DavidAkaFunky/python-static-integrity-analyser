@@ -8,6 +8,7 @@ class ASTVisitor(ast.NodeVisitor):
 		self.policy = Policy([Pattern.from_json(pattern) for pattern in patterns])
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
+		self.conditions_stack = []
    
 	########### EXPRESSIONS ###########
 	
