@@ -6,6 +6,7 @@ class Node:
     def __init__(self, name: str, line: int):
         self.name = name 
         self.line = line
+        self.initialise = True
     
     def get_name(self):
         return self.name
@@ -13,8 +14,11 @@ class Node:
     def get_line(self):
         return self.line
     
-    def add_attribute(self, attr):
-        self.name += "." + attr
+    def do_not_initialise(self):
+        self.initialise = False
+        
+    def should_initialise(self):
+        return self.initialise
     
     def __repr__(self):
         return [self.name, self.line].__repr__()
@@ -180,12 +184,15 @@ class MultiLabel:
 
     @staticmethod
     def combine(multilabel1, multilabel2):
+        #print("ML1", multilabel1)
+        #print("ML2", multilabel2)
         new_multilabel = multilabel1.get_copy()
         for vuln_name in multilabel2.get_vulns():
             if vuln_name in new_multilabel.get_vulns():
                 new_multilabel.set_pattern_label(vuln_name, Label.combine(multilabel1.get_label(vuln_name), multilabel2.get_label(vuln_name)))
             else:
                 new_multilabel.set_pattern_label(vuln_name, multilabel2.get_label(vuln_name))
+        #print("COMBINED", new_multilabel)
         return new_multilabel
     
 class Policy:
@@ -225,13 +232,13 @@ class Policy:
     
     def get_illegal_flows_multilabel(self, multilabel, node):
         new_multilabel = multilabel.get_copy()
-        for vuln_name in new_multilabel.get_vulns().intersect(self.get_non_sink_vulns(node.get_name())):
+        for vuln_name in new_multilabel.get_vulns().intersection(self.get_non_sink_vulns(node.get_name())):
             del new_multilabel.label_map[vuln_name]
         return new_multilabel
     
     def get_implicit_patterns_multilabel(self, multilabel):
         new_multilabel = multilabel.get_copy()
-        for vuln_name in new_multilabel.get_vulns().intersect(self.get_non_implicit_vulns()):
+        for vuln_name in new_multilabel.get_vulns().intersection(self.get_non_implicit_vulns()):
             del new_multilabel.label_map[vuln_name]
         return new_multilabel
     
@@ -317,7 +324,6 @@ class Vulnerabilities:
                 label = vulnerability[0]
                 sink = vulnerability[1]
                 for pair in label.get_pairs():
-                    print(pair)
                     vuln = {}
                     vuln["vulnerability"] = vuln_name + "_" + str(i)
                     vuln["source"] = pair[0]
