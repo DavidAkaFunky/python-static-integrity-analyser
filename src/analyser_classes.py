@@ -7,7 +7,7 @@ class Node:
         self.name = name 
         self.line = line
         self.initialise = True
-    
+
     def get_name(self):
         return self.name
     
@@ -83,6 +83,16 @@ class Label:
         self.pairs = []
         if source is not None:
             self.add_pair([source, [[]]])
+
+    def __eq__(self, other):
+        if len(self.pairs) != len(other.pairs):
+            return False
+
+        for pair in self.pairs:
+            if pair not in other.pairs:
+                return False
+        return True
+		
        
     def get_pairs(self):
         return deepcopy(self.pairs)
@@ -141,6 +151,16 @@ class MultiLabel:
                         self.label_map[vuln_name] = [new_label]
                     else:
                         self.label_map[vuln_name] = new_label
+
+    def __eq__(self, other):
+        if len(self.label_map.keys()) != len(other.label_map.keys()):
+            return False
+
+        for vuln_name in self.label_map.keys():
+            if vuln_name not in other.label_map.keys() or self.label_map[vuln_name] != other.label_map[vuln_name]:
+                return False
+
+        return True
          
     def get_vulns(self):
         return set(self.label_map.keys())
@@ -194,6 +214,7 @@ class MultiLabel:
                 new_multilabel.set_pattern_label(vuln_name, multilabel2.get_label(vuln_name))
         #print("COMBINED", new_multilabel)
         return new_multilabel
+
     
 class Policy:
     
@@ -241,7 +262,6 @@ class Policy:
         for vuln_name in new_multilabel.get_vulns().intersection(self.get_non_implicit_vulns()):
             del new_multilabel.label_map[vuln_name]
         return new_multilabel
-    
 
 class MultiLabelling:
     
@@ -249,6 +269,15 @@ class MultiLabelling:
     
     def __init__(self):
         self.variable_map = {}
+
+    def __eq__(self, other):
+        if len(self.variable_map.keys()) != len(other.variable_map.keys()):
+            return False
+
+        for variable in self.variable_map.keys():
+            if variable not in other.variable_map.keys() or self.variable_map[variable] != other.variable_map[variable]:
+                return False
+        return True
         
     def add_multilabel(self, variable: str, multilabel: MultiLabel):
         if variable in self.variable_map:
@@ -273,6 +302,13 @@ class MultiLabelling:
     
     def delete_multilabel(self, variable):
         del self.variable_map[variable]
+
+    def conciliate_multilabelling(self, other_multilabelling):
+        for variable in other_multilabelling.get_variable_map():
+            if variable in self.variable_map:
+                self.variable_map[variable] = MultiLabel.combine(self.variable_map[variable], other_multilabelling.get_multilabel(variable))
+            else:
+                self.variable_map[variable] = other_multilabelling.get_multilabel(variable)
         
     def __repr__(self):
         return self.variable_map.__repr__()

@@ -204,8 +204,39 @@ class ASTVisitor(ast.NodeVisitor):
 		   elif clauses don't have a special representation in the AST,
 		but rather appear as extra If nodes within the orelse section of the previous one."""
 		pass
-			
-	def visit_While(self, node):
-		"""A while loop.
-		   test holds the condition, such as a Compare node."""
-		pass
+
+    def visit_While(self, node):
+        """A while loop.
+        test holds the condition, such as a Compare node."""
+        test = self.visit(node.test)
+
+        ml1 = ml_state = deepcopy(self)
+        tolerance = 0
+        for i in range(10000):
+            #print(i, "WHILE")
+            #print(tolerance, "TOLERANCE")
+            for body_node in node.body:
+                ml1.visit(body_node)
+
+            # print("MULTILABELLING", ml1.multilabelling)
+            # print("MULTILABELLING", ml_state.multilabelling)
+            if ml1.multilabelling == ml_state.multilabelling:
+                tolerance += 1
+            else:
+                tolerance = 0
+
+            ml1.visit(node.test)
+
+            if tolerance == 15:
+                break
+            ml_state = deepcopy(ml1)
+
+        ml2 = deepcopy(self)
+        for or_else_node in node.orelse:
+            ml2.visit(or_else_node)
+
+        ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+
+        self.multilabelling = ml1.multilabelling
+
+        return None, None
