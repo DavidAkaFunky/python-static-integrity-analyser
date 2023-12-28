@@ -108,7 +108,8 @@ class Label:
     def add_pair(self, other_pair):
         for pair in self.pairs:
             if pair[0] == other_pair[0]:
-                pair[1] += other_pair[1]
+                if any(x for x in other_pair[1]) and other_pair[1] not in pair[1]:
+                    pair[1] += other_pair[1]
                 return
         self.pairs.append(other_pair)
         
