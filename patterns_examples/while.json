@@ -1,0 +1,40 @@
+[
+    {
+        "vulnerability": "SQL Injection",
+        "sources": [
+            "uname",
+            "bl"
+        ],
+        "sanitizers": [
+            "san"
+        ],
+        "sinks": [
+            "cursor.execute"
+        ],
+        "implicit": "yes"
+    },
+    {
+        "vulnerability": "Untrusted Input",
+        "sources": [
+            "xd",
+            "si"
+        ],
+        "sanitizers": [],
+        "sinks": [
+            "cursor.fetchone",
+            "execute"
+        ],
+        "implicit": "yes"
+    },
+    {
+        "vulnerability": "Untrusted Input2",
+        "sources": [
+            "xd"
+        ],
+        "sanitizers": [],
+        "sinks": [
+            "cursor.execute"
+        ],
+        "implicit": "no"
+    }
+]

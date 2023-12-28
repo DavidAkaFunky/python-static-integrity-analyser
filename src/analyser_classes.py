@@ -108,7 +108,8 @@ class Label:
     def add_pair(self, other_pair):
         for pair in self.pairs:
             if pair[0] == other_pair[0]:
-                pair[1] += other_pair[1]
+                if any(x for x in other_pair[1]) and other_pair[1] not in pair[1]:
+                    pair[1] += other_pair[1]
                 return
         self.pairs.append(other_pair)
         
@@ -352,12 +353,12 @@ class Vulnerabilities:
 
     def conciliate_vulnerabilities(self, other_vulnerabilities):
         for vuln_name in other_vulnerabilities.get_vulnerabilities():
+            other_vulns = other_vulnerabilities.get_vulnerabilities()[vuln_name]
             if self.vulnerabilities:
-                self.vulnerabilities[vuln_name] += other_vulnerabilities.get_vulnerabilities()[vuln_name]
-                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
+                if other_vulns not in self.vulnerabilities[vuln_name]:
+                    self.vulnerabilities[vuln_name] += other_vulns
             else:
-                self.vulnerabilities[vuln_name] = other_vulnerabilities.get_vulnerabilities()[vuln_name]
-                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
+                self.vulnerabilities[vuln_name] = other_vulns
                 
     def __repr__(self):
         """
