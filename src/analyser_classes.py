@@ -34,7 +34,7 @@ class Node:
 
 class Pattern:
     
-    def __init__(self, vuln_name: str, sources: set[Node], sanitisers: set[Node], sinks: set[Node], implicit: bool):
+    def __init__(self, vuln_name: str, sources: 'set[Node]', sanitisers: 'set[Node]', sinks: 'set[Node]', implicit: bool):
         self.vuln_name = vuln_name
         self.sources = sources
         self.sanitisers = sanitisers
@@ -221,7 +221,7 @@ class MultiLabel:
     
 class Policy:
     
-    def __init__(self, patterns: list[Pattern]):
+    def __init__(self, patterns: 'list[Pattern]'):
         self.patterns = patterns
         
     def get_patterns(self):

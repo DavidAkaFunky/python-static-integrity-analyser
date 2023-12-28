@@ -11,7 +11,6 @@ class ASTVisitor(ast.NodeVisitor):
 		self.conditions_stack = []
 		self.implicit_while_stack = []
    
-	########### EXPRESSIONS ###########
 	def update_test(self, test_node, pos = None):
 		_, test = self.visit(test_node)
 
@@ -43,6 +42,8 @@ class ASTVisitor(ast.NodeVisitor):
 		# It's neither, return multilabel where it's a source in all patterns
 		return simple_node, MultiLabel.create_for_uninitialised_variable(self.policy, simple_node)
 		
+	
+	########### EXPRESSIONS ###########
 	
 	def visit_Name(self, node):
 		"""A named expression.
@@ -233,7 +234,31 @@ class ASTVisitor(ast.NodeVisitor):
 		   body and orelse each hold a list of nodes.
 		   elif clauses don't have a special representation in the AST,
 		but rather appear as extra If nodes within the orelse section of the previous one."""
-		pass
+
+		#print("IF")
+
+		_, test = self.visit(node.test)
+		multilabel = self.policy.get_implicit_patterns_multilabel(test)
+
+		self.conditions_stack.append(multilabel)
+
+		ml1 = deepcopy(self)
+		for body_node in node.body:
+			ml1.visit(body_node)
+		
+		ml2 = deepcopy(self)
+		for or_else_node in node.orelse:
+			ml2.visit(or_else_node)
+
+		ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
+
+		self.conditions_stack.pop()
+
+		return None, None
 
 	def visit_While(self, node):
 		"""A while loop.
