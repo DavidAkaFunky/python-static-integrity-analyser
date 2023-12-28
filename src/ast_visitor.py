@@ -9,6 +9,7 @@ class ASTVisitor(ast.NodeVisitor):
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
 		self.conditions_stack = []
+		self.implicit_while_stack = []
    
 	########### EXPRESSIONS ###########
  
@@ -77,11 +78,16 @@ class ASTVisitor(ast.NodeVisitor):
 		"""A comparison of two or more values.
 		   left is the first value in the comparison, ops the list of operators,
 		and comparators the list of values after the first element in the comparison."""
-  
+ 
 		_, multilabel = self.visit(node.left)
 		for comparator in node.comparators:
-			_, cmp_multilabel = self.visit(comparator)
+			cmp_multilabel = self.visit(comparator)
+			if cmp_multilabel is None:
+				cmp_multilabel = MultiLabel.create_empty()
+			else:
+				_, cmp_multilabel = cmp_multilabel
 			multilabel = MultiLabel.combine(multilabel, cmp_multilabel)
+
 		return None, multilabel
 			
 	def visit_Call(self, node):
@@ -103,11 +109,15 @@ class ASTVisitor(ast.NodeVisitor):
 		for arg_node in node.args + node.keywords:
 			arg = self.visit(arg_node)
 			if arg is None:
-				continue
-			_, arg_multilabel = arg
+				arg_multilabel = MultiLabel.create_empty()
+			else:
+				_, arg_multilabel = arg
 			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
 		
 		for func_variable in func_variables:
+			for iws in self.implicit_while_stack:
+				self.vulnerabilities.add_vulnerability(self.policy, iws, func_variable)
+
 			return_multilabel.sanitise(self.policy, func_variable)
 			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
 
@@ -190,8 +200,13 @@ class ASTVisitor(ast.NodeVisitor):
   
 		for target_node in targets:
 			self.vulnerabilities.add_vulnerability(self.policy, value_multilabel, target_node)
+
 			if target_node.should_initialise():
 				self.multilabelling.set_multilabel(target_node.get_name(), value_multilabel)
+				for iws in self.implicit_while_stack:
+					ml = self.multilabelling.get_multilabel(target_node.get_name())
+					ml = MultiLabel.combine(ml, iws)
+					self.multilabelling.set_multilabel(target_node.get_name(), ml)
 		
 		#print("MULTILABELLING", self.multilabelling)
 		#print("_______________")
@@ -205,38 +220,47 @@ class ASTVisitor(ast.NodeVisitor):
 		but rather appear as extra If nodes within the orelse section of the previous one."""
 		pass
 
-    def visit_While(self, node):
-        """A while loop.
-        test holds the condition, such as a Compare node."""
-        test = self.visit(node.test)
+	def visit_While(self, node):
+		"""A while loop.
+		test holds the condition, such as a Compare node."""
+		_, test = self.visit(node.test)
 
-        ml1 = ml_state = deepcopy(self)
-        tolerance = 0
-        for i in range(10000):
-            #print(i, "WHILE")
-            #print(tolerance, "TOLERANCE")
-            for body_node in node.body:
-                ml1.visit(body_node)
+		self.implicit_while_stack.append(test)
+		iws_pos = len(self.implicit_while_stack) - 1
 
-            # print("MULTILABELLING", ml1.multilabelling)
-            # print("MULTILABELLING", ml_state.multilabelling)
-            if ml1.multilabelling == ml_state.multilabelling:
-                tolerance += 1
-            else:
-                tolerance = 0
+		ml1 = ml_state = deepcopy(self)
+		tolerance = 0
+		for i in range(10000):
+			#print(i, "WHILE", node.lineno)
+			#print(tolerance, "TOLERANCE")
+			for body_node in node.body:
+				ml1.visit(body_node)
 
-            ml1.visit(node.test)
+			#print("MULTILABELLING", ml1.multilabelling)
+			#print("MULTILABELLING", ml_state.multilabelling)
+			if ml1.multilabelling == ml_state.multilabelling:
+				tolerance += 1
+			else:
+				tolerance = 0
 
-            if tolerance == 15:
-                break
-            ml_state = deepcopy(ml1)
+			dat = ml1.visit(node.test)[1]
 
-        ml2 = deepcopy(self)
-        for or_else_node in node.orelse:
-            ml2.visit(or_else_node)
+			self.implicit_while_stack[iws_pos] = dat
 
-        ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+			if tolerance == 15:
+				break
+			ml_state = deepcopy(ml1)
 
-        self.multilabelling = ml1.multilabelling
+		ml2 = deepcopy(self)
+		for or_else_node in node.orelse:
+			ml2.visit(or_else_node)
 
-        return None, None
+		ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
+
+		self.implicit_while_stack.pop()
+
+		return None, None

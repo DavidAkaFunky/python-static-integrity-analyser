@@ -63,7 +63,7 @@ class Pattern:
         return deepcopy(self.sinks)
 
     def is_implicit(self):
-        return self.implicit
+        return self.implicit == "yes"
     
     def __repr__(self):
         return [self.vuln_name, self.sources, self.sanitisers, self.sinks, self.implicit].__repr__()
@@ -101,7 +101,8 @@ class Label:
         #print("SANITISING!!!!", self.pairs)
         for pair in self.pairs:
             for flow in pair[1]:
-                flow.append(sanitiser)
+                if flow and sanitiser not in flow:
+                    flow.append(sanitiser)
         #print("SANITISED!!!!", self.pairs)
             
     def add_pair(self, other_pair):
@@ -127,7 +128,8 @@ class Label:
     def combine(label1, label2):
         new_label = label1.get_copy()
         for pair in label2.get_pairs():
-            new_label.add_pair(pair)
+            if pair not in new_label.get_pairs():
+                new_label.add_pair(pair)
         return new_label
 
 class MultiLabel:
@@ -185,7 +187,8 @@ class MultiLabel:
     
     def sanitise(self, policy, node: Node):
         for vuln_name in policy.get_vulns_by_sanitiser(node.get_name()):
-            self.label_map[vuln_name].sanitise(node)
+            if vuln_name in self.label_map:
+                self.label_map[vuln_name].sanitise(node)
     
     def __repr__(self):
         return self.label_map.__repr__()
@@ -198,7 +201,7 @@ class MultiLabel:
     def create_for_uninitialised_variable(policy, node: Node):
         new_multilabel = MultiLabel.create_empty()
         label = Label(node)
-        for vuln_name in policy.get_vulns():
+        for vuln_name in policy.get_implicit_vulns():
             new_multilabel.label_map[vuln_name] = label
         return new_multilabel
 
@@ -250,6 +253,9 @@ class Policy:
     
     def get_non_implicit_vulns(self):
         return set(pattern.get_vuln_name() for pattern in self.patterns if not pattern.is_implicit())
+
+    def get_implicit_vulns(self):
+        return set(pattern.get_vuln_name() for pattern in self.patterns if pattern.is_implicit())
     
     def get_illegal_flows_multilabel(self, multilabel, node):
         new_multilabel = multilabel.get_copy()
@@ -335,9 +341,23 @@ class Vulnerabilities:
         new_multilabel = policy.get_illegal_flows_multilabel(multilabel, node)
         for vuln_name in new_multilabel.get_vulns():
             if vuln_name in self.vulnerabilities:
-                self.vulnerabilities[vuln_name].append((new_multilabel.get_label(vuln_name), node))
+                node_data = (new_multilabel.get_label(vuln_name), node)
+                if node_data not in self.vulnerabilities[vuln_name]:
+                    self.vulnerabilities[vuln_name].append(node_data)
             else:
                 self.vulnerabilities[vuln_name] = [(new_multilabel.get_label(vuln_name), node)]
+
+    def get_vulnerabilities(self):
+        return deepcopy(self.vulnerabilities)
+
+    def conciliate_vulnerabilities(self, other_vulnerabilities):
+        for vuln_name in other_vulnerabilities.get_vulnerabilities():
+            if self.vulnerabilities:
+                self.vulnerabilities[vuln_name] += other_vulnerabilities.get_vulnerabilities()[vuln_name]
+                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
+            else:
+                self.vulnerabilities[vuln_name] = other_vulnerabilities.get_vulnerabilities()[vuln_name]
+                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
                 
     def __repr__(self):
         """
