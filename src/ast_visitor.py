@@ -12,6 +12,21 @@ class ASTVisitor(ast.NodeVisitor):
 		self.implicit_while_stack = []
    
 	########### EXPRESSIONS ###########
+	def update_test(self, test_node, pos = None):
+		_, test = self.visit(test_node)
+
+		imp = self.policy.get_implicit_patterns_multilabel(test)
+		for k in test.get_vulns():
+			if k not in imp.get_vulns():
+				del test.label_map[k]
+
+		if pos is None:
+			pos = len(self.implicit_while_stack) - 1
+			self.implicit_while_stack.append(test)
+		else:
+			self.implicit_while_stack[pos] = test
+
+		return pos
  
 	def __get_variable_multilabel(self, name, lineno):
 		simple_node = Node(name, lineno)
@@ -223,10 +238,8 @@ class ASTVisitor(ast.NodeVisitor):
 	def visit_While(self, node):
 		"""A while loop.
 		test holds the condition, such as a Compare node."""
-		_, test = self.visit(node.test)
 
-		self.implicit_while_stack.append(test)
-		iws_pos = len(self.implicit_while_stack) - 1
+		iws_pos = self.update_test(node.test)
 
 		ml1 = ml_state = deepcopy(self)
 		tolerance = 0
@@ -243,9 +256,7 @@ class ASTVisitor(ast.NodeVisitor):
 			else:
 				tolerance = 0
 
-			dat = ml1.visit(node.test)[1]
-
-			self.implicit_while_stack[iws_pos] = dat
+			self.update_test(node.test, iws_pos)
 
 			if tolerance == 15:
 				break

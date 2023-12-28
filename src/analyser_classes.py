@@ -101,7 +101,7 @@ class Label:
         #print("SANITISING!!!!", self.pairs)
         for pair in self.pairs:
             for flow in pair[1]:
-                if flow and sanitiser not in flow:
+                if sanitiser not in flow:
                     flow.append(sanitiser)
         #print("SANITISED!!!!", self.pairs)
             
@@ -201,7 +201,7 @@ class MultiLabel:
     def create_for_uninitialised_variable(policy, node: Node):
         new_multilabel = MultiLabel.create_empty()
         label = Label(node)
-        for vuln_name in policy.get_implicit_vulns():
+        for vuln_name in policy.get_vulns():
             new_multilabel.label_map[vuln_name] = label
         return new_multilabel
 
