@@ -3,7 +3,7 @@ a = cursor.execute("SELECT pass FROM users WHERE user='%s'" % uname)
 a = a+1
 while a:
     # just make random vars and names like: xd, c and whatever you want
-    bl = xd
+    bl = san(xd)
     execute("SELECT pass FROM users WHERE user='%s'" % bl)
     
     while si == 1:

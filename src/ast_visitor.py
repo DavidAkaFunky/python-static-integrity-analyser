@@ -16,6 +16,7 @@ class ASTVisitor(ast.NodeVisitor):
 		_, test = self.visit(test_node)
 
 		imp = self.policy.get_implicit_patterns_multilabel(test)
+		#print(test, "TEST_")
 		for k in test.get_vulns():
 			if k not in imp.get_vulns():
 				del test.label_map[k]
@@ -26,6 +27,7 @@ class ASTVisitor(ast.NodeVisitor):
 		else:
 			self.implicit_while_stack[pos] = test
 
+		#print(self.implicit_while_stack[pos], "POS_")
 		return pos
  
 	def __get_variable_multilabel(self, name, lineno):

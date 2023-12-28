@@ -353,12 +353,12 @@ class Vulnerabilities:
 
     def conciliate_vulnerabilities(self, other_vulnerabilities):
         for vuln_name in other_vulnerabilities.get_vulnerabilities():
+            other_vulns = other_vulnerabilities.get_vulnerabilities()[vuln_name]
             if self.vulnerabilities:
-                self.vulnerabilities[vuln_name] += other_vulnerabilities.get_vulnerabilities()[vuln_name]
-                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
+                if other_vulns not in self.vulnerabilities[vuln_name]:
+                    self.vulnerabilities[vuln_name] += other_vulns
             else:
-                self.vulnerabilities[vuln_name] = other_vulnerabilities.get_vulnerabilities()[vuln_name]
-                self.vulnerabilities[vuln_name] = list(set(self.vulnerabilities[vuln_name]))
+                self.vulnerabilities[vuln_name] = other_vulns
                 
     def __repr__(self):
         """
