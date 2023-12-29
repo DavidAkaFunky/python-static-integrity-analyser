@@ -9,10 +9,14 @@ class ASTVisitor(ast.NodeVisitor):
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
 		self.conditions_stack = []
-		self.implicit_while_stack = []
    
-	def update_test(self, test_node, pos = None):
-		_, test = self.visit(test_node)
+	def __update_test(self, test_node, pos = None):
+		test = self.visit(test_node)
+  
+		if test is None:
+			return None
+
+		test = test[1]
 
 		imp = self.policy.get_implicit_patterns_multilabel(test)
 		#print(test, "TEST_")
@@ -21,12 +25,12 @@ class ASTVisitor(ast.NodeVisitor):
 				del test.label_map[k]
 
 		if pos is None:
-			pos = len(self.implicit_while_stack) - 1
-			self.implicit_while_stack.append(test)
+			pos = len(self.conditions_stack) - 1
+			self.conditions_stack.append(test)
 		else:
-			self.implicit_while_stack[pos] = test
+			self.conditions_stack[pos] = test
 
-		#print(self.implicit_while_stack[pos], "POS_")
+		#print(self.conditions_stack[pos], "POS_")
 		return pos
  
 	def __get_variable_multilabel(self, name, lineno):
@@ -34,14 +38,16 @@ class ASTVisitor(ast.NodeVisitor):
 		multilabel = MultiLabel(self.policy.get_patterns_by_source(name), [Label(simple_node)])
 		
 		if self.multilabelling.is_variable_initialised(name):
-			#print(name, "is initialised")
-			return simple_node, MultiLabel.combine(self.multilabelling.get_multilabel(name), multilabel)
+			multilabel = MultiLabel.combine(self.multilabelling.get_multilabel(name), multilabel)
 
-		# Uninitialised variable -> Check if source or sanitiser
-		#if not multilabel.is_empty() or len(self.policy.get_vulns_by_sanitiser(name)) != 0:
-		#	return simple_node, multilabel
+			# Variables not present in *all* if/else branches 
+   			# contain a false "non-initialised" source with lineno = -1.
+			# This is fixed by replacing that value with the node's lineno
+			# before returning the multilabel
+			multilabel.fix_lineno(lineno)
+			return simple_node, multilabel
 
-		# It's neither, return multilabel where it's a source in all patterns
+		# Uninitialised variable -> Return multilabel where it's a source in all patterns
 		return simple_node, MultiLabel.create_for_uninitialised_variable(self.policy, simple_node)
 		
 	
@@ -133,8 +139,8 @@ class ASTVisitor(ast.NodeVisitor):
 			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
 		
 		for func_variable in func_variables:
-			for iws in self.implicit_while_stack:
-				self.vulnerabilities.add_vulnerability(self.policy, iws, func_variable)
+			for cond in self.conditions_stack:
+				self.vulnerabilities.add_vulnerability(self.policy, cond, func_variable)
 
 			return_multilabel.sanitise(self.policy, func_variable)
 			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
@@ -217,14 +223,15 @@ class ASTVisitor(ast.NodeVisitor):
 		#print(value_multilabel)
   
 		for target_node in targets:
+			
+			for iws in self.conditions_stack:
+				value_multilabel = MultiLabel.combine(value_multilabel, iws)
+      
 			self.vulnerabilities.add_vulnerability(self.policy, value_multilabel, target_node)
 
 			if target_node.should_initialise():
 				self.multilabelling.set_multilabel(target_node.get_name(), value_multilabel)
-				for iws in self.implicit_while_stack:
-					ml = self.multilabelling.get_multilabel(target_node.get_name())
-					ml = MultiLabel.combine(ml, iws)
-					self.multilabelling.set_multilabel(target_node.get_name(), ml)
+				
 		
 		#print("MULTILABELLING", self.multilabelling)
 		#print("_______________")
@@ -239,10 +246,11 @@ class ASTVisitor(ast.NodeVisitor):
 
 		#print("IF")
 
-		_, test = self.visit(node.test)
-		multilabel = self.policy.get_implicit_patterns_multilabel(test)
-
-		self.conditions_stack.append(multilabel)
+		test = self.visit(node.test)
+  
+		if test is not None:
+			multilabel = self.policy.get_implicit_patterns_multilabel(test[1])
+			self.conditions_stack.append(multilabel)
 
 		ml1 = deepcopy(self)
 		for body_node in node.body:
@@ -252,13 +260,14 @@ class ASTVisitor(ast.NodeVisitor):
 		for or_else_node in node.orelse:
 			ml2.visit(or_else_node)
 
-		ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
 		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
 		self.multilabelling = ml1.multilabelling
 		self.vulnerabilities = ml1.vulnerabilities
 
-		self.conditions_stack.pop()
+		if test is not None:
+			self.conditions_stack.pop()
 
 		return None, None
 
@@ -266,11 +275,12 @@ class ASTVisitor(ast.NodeVisitor):
 		"""A while loop.
 		test holds the condition, such as a Compare node."""
 
-		iws_pos = self.update_test(node.test)
+		iws_pos = self.__update_test(node.test)
 
 		ml1 = ml_state = deepcopy(self)
 		tolerance = 0
-		for i in range(10000):
+  
+		for _ in range(10000):
 			#print(i, "WHILE", node.lineno)
 			#print(tolerance, "TOLERANCE")
 			for body_node in node.body:
@@ -283,7 +293,7 @@ class ASTVisitor(ast.NodeVisitor):
 			else:
 				tolerance = 0
 
-			self.update_test(node.test, iws_pos)
+			self.__update_test(node.test, iws_pos)
 
 			if tolerance == 15:
 				break
@@ -292,13 +302,18 @@ class ASTVisitor(ast.NodeVisitor):
 		ml2 = deepcopy(self)
 		for or_else_node in node.orelse:
 			ml2.visit(or_else_node)
-
-		ml1.multilabelling.conciliate_multilabelling(ml2.multilabelling)
+		
+		#print("MULTILABELLING1", ml1.multilabelling)
+		#print("MULTILABELLING2", ml2.multilabelling)
+  
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		#print("MULTILABELLING FINAL", ml1.multilabelling)
 		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
 		self.multilabelling = ml1.multilabelling
 		self.vulnerabilities = ml1.vulnerabilities
 
-		self.implicit_while_stack.pop()
+		if iws_pos is not None:
+			self.conditions_stack.pop()
 
 		return None, None
