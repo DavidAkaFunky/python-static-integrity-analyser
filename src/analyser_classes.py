@@ -23,14 +23,17 @@ class Node:
     def should_initialise(self):
         return self.initialise
     
+    def as_list(self):
+        return [self.name, self.line]
+    
     def __repr__(self):
-        return [self.name, self.line].__repr__()
+        return self.as_list().__repr__()
     
     def __eq__(self, other):
         return self.name == other.name and self.line == other.line
     
     def __iter__(self):
-        return iter([self.name, self.line])
+        return iter(self.as_list())
     
     def __hash__(self) -> int:
         return hash((self.name, self.line))
@@ -91,19 +94,24 @@ class Label:
         return deepcopy(self.pairs)
     
     def sanitise(self, sanitiser: Node):
-        #print("SANITISING!!!!", self.pairs)
+        #print("SANITISING!!!!", self.pairs, sanitiser)
         for pair in self.pairs:
-            for flow in pair[1]:
+            for i, flow in enumerate(pair[1]):
                 if sanitiser not in flow:
                     flow.append(sanitiser)
+                    if len([x for x in pair[1] if x == flow]) > 1:
+                        pair[1].pop(i)
         #print("SANITISED!!!!", self.pairs)
             
     def add_pair(self, other_pair):
         for pair in self.pairs:
             if pair[0] == other_pair[0]:
                 for flow in other_pair[1]:
+                    #print("FLOW", flow)
+                    #print("PAIR1 BEFORE", pair[1])
                     if flow not in pair[1]:
                         pair[1].append(flow)
+                    #print("PAIR1 AFTER", pair[1])
                 return
         self.pairs.append(other_pair)
         
@@ -381,12 +389,13 @@ class Vulnerabilities:
     def conciliate_vulnerabilities(self, other):
         other_vulns = other.get_vulnerabilities()
         for vuln_name in other_vulns:
-            other_vuln = other_vulns[vuln_name]
+            other_vulns_by_name = other_vulns[vuln_name]
             if vuln_name in self.vulnerabilities:
-                if other_vuln not in self.vulnerabilities[vuln_name]:
-                    self.vulnerabilities[vuln_name] += other_vuln
+                for other_vuln in other_vulns_by_name:
+                    if other_vuln not in self.vulnerabilities[vuln_name]:
+                        self.vulnerabilities[vuln_name].append(other_vuln)
             else:
-                self.vulnerabilities[vuln_name] = other_vuln
+                self.vulnerabilities[vuln_name] = other_vulns_by_name
                 
     def __repr__(self):
         """
@@ -411,11 +420,11 @@ class Vulnerabilities:
                 for pair in label.get_pairs():
                     vuln = {}
                     vuln["vulnerability"] = vuln_name + "_" + str(i)
-                    vuln["source"] = pair[0]
-                    vuln["sink"] = sink
+                    vuln["source"] = pair[0].as_list()
+                    vuln["sink"] = sink.as_list()
                     vuln["unsanitized_flows"] = "yes" if any([len(flow) == 0 for flow in pair[1]]) else "no"
-                    vuln["sanitized_flows"] = [flow for flow in pair[1] if len(flow) > 0]
+                    vuln["sanitized_flows"] = [[sanitiser.as_list() for sanitiser in flow] for flow in pair[1] if len(flow) > 0]
                     output.append(vuln)
                     i += 1
 
-        return json.dumps(str(output))
+        return json.dumps(output, default=lambda o: o.__dict__, indent=4)

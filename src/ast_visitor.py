@@ -137,11 +137,11 @@ class ASTVisitor(ast.NodeVisitor):
 			else:
 				_, arg_multilabel = arg
 			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
+   
+		for cond in self.conditions_stack:
+			return_multilabel = MultiLabel.combine(return_multilabel, cond)
 		
 		for func_variable in func_variables:
-			for cond in self.conditions_stack:
-				self.vulnerabilities.add_vulnerability(self.policy, cond, func_variable)
-
 			return_multilabel.sanitise(self.policy, func_variable)
 			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
 
@@ -288,6 +288,7 @@ class ASTVisitor(ast.NodeVisitor):
 
 			#print("MULTILABELLING", ml1.multilabelling)
 			#print("MULTILABELLING", ml_state.multilabelling)
+			#print(ml1.multilabelling == ml_state.multilabelling, tolerance)
 			if ml1.multilabelling == ml_state.multilabelling:
 				tolerance += 1
 			else:
