@@ -2,26 +2,26 @@
     {
         "vulnerability": "SQL Injection",
         "sources": [
-            "uname",
-            "bl"
-        ],
+			"ChatMessageForm",
+			"ContactMailForm"
+		],
         "sanitizers": [
             "san"
         ],
         "sinks": [
-            "cursor.execute"
+            "execute"
         ],
         "implicit": "yes"
     },
     {
         "vulnerability": "Untrusted Input",
         "sources": [
-            "xd",
-            "si"
+			"ChatMessageForm",
+			"ContactMailForm"
         ],
         "sanitizers": [],
         "sinks": [
-            "cursor.fetchone",
+            "fetchone",
             "execute"
         ],
         "implicit": "yes"
@@ -29,11 +29,12 @@
     {
         "vulnerability": "Untrusted Input2",
         "sources": [
-            "xd"
+			"ChatMessageForm",
+			"ContactMailForm"
         ],
         "sanitizers": [],
         "sinks": [
-            "cursor.execute"
+            "execute"
         ],
         "implicit": "no"
     }

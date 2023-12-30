@@ -1,4 +1,5 @@
 uname = "user"
+cursor = "defined"
 a = cursor.execute("SELECT pass FROM users WHERE user='%s'" % uname)
 a = a+1
 while a:
@@ -10,7 +11,8 @@ while a:
         a = cursor.fetchone()
         xd = ChatMessageForm()
 
-    si = (ChatMessageForm()) * (c == 1)
+    if c == 1:
+        xd = ContactMailForm()
 
     while xd:
         xdd = ContactMailForm()
