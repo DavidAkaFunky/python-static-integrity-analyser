@@ -278,26 +278,20 @@ class ASTVisitor(ast.NodeVisitor):
 		iws_pos = self.__update_test(node.test)
 
 		ml1 = ml_state = deepcopy(self)
-		tolerance = 0
   
 		for _ in range(10000):
 			#print(i, "WHILE", node.lineno)
-			#print(tolerance, "TOLERANCE")
 			for body_node in node.body:
 				ml1.visit(body_node)
 
 			#print("MULTILABELLING", ml1.multilabelling)
 			#print("MULTILABELLING", ml_state.multilabelling)
-			#print(ml1.multilabelling == ml_state.multilabelling, tolerance)
+			#print(ml1.multilabelling == ml_state.multilabelling)
 			if ml1.multilabelling == ml_state.multilabelling:
-				tolerance += 1
-			else:
-				tolerance = 0
+				break
 
 			self.__update_test(node.test, iws_pos)
 
-			if tolerance == 15:
-				break
 			ml_state = ml1
 
 		ml2 = deepcopy(self)
