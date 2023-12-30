@@ -10,8 +10,7 @@ while a:
         a = cursor.fetchone()
         xd = ChatMessageForm()
 
-    if c == 1:
-        si = ChatMessageForm()
+    si = (ChatMessageForm()) * (c == 1)
 
     while xd:
         xdd = ContactMailForm()

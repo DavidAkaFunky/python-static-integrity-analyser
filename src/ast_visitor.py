@@ -298,7 +298,7 @@ class ASTVisitor(ast.NodeVisitor):
 
 			if tolerance == 15:
 				break
-			ml_state = deepcopy(ml1)
+			ml_state = ml1
 
 		ml2 = deepcopy(self)
 		for or_else_node in node.orelse:
@@ -316,5 +316,8 @@ class ASTVisitor(ast.NodeVisitor):
 
 		if iws_pos is not None:
 			self.conditions_stack.pop()
+
+		del ml1
+		del ml2
 
 		return None, None
