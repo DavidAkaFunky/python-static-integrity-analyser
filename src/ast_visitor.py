@@ -277,7 +277,8 @@ class ASTVisitor(ast.NodeVisitor):
 
 		iws_pos = self.__update_test(node.test)
 
-		ml1 = ml_state = deepcopy(self)
+		ml1 = deepcopy(self)
+		ml_state = deepcopy(self)
   
 		for _ in range(10000):
 			#print(i, "WHILE", node.lineno)
@@ -290,7 +291,7 @@ class ASTVisitor(ast.NodeVisitor):
 			if ml1.multilabelling == ml_state.multilabelling:
 				break
 
-			self.__update_test(node.test, iws_pos)
+			ml1.__update_test(node.test, iws_pos)
 
 			ml_state = ml1
 
