@@ -273,17 +273,30 @@ class ASTVisitor(ast.NodeVisitor):
 
 	def visit_While(self, node):
 		"""A while loop.
-		test holds the condition, such as a Compare node."""
+		   test holds the condition, such as a Compare node."""
 
 		iws_pos = self.__update_test(node.test)
 
 		ml1 = deepcopy(self)
 		ml_state = deepcopy(self)
+		found_break = False
+		found_continue = False
   
 		for _ in range(10000):
 			#print(i, "WHILE", node.lineno)
 			for body_node in node.body:
+
+				if type(body_node) == ast.Break:
+					found_break = True
+					break
+
+				if type(body_node) == ast.Continue:
+					break
+ 
 				ml1.visit(body_node)
+    
+			if found_break:
+				break
 
 			#print("MULTILABELLING", ml1.multilabelling)
 			#print("MULTILABELLING", ml_state.multilabelling)
@@ -297,6 +310,8 @@ class ASTVisitor(ast.NodeVisitor):
 
 		ml2 = deepcopy(self)
 		for or_else_node in node.orelse:
+			if not found_break:
+				ml1.visit(or_else_node)
 			ml2.visit(or_else_node)
 		
 		#print("MULTILABELLING1", ml1.multilabelling)
@@ -316,3 +331,76 @@ class ASTVisitor(ast.NodeVisitor):
 		del ml2
 
 		return None, None
+
+	def visit_Match(self, node):
+		"""A match statement. 
+  		   subject holds the subject of the match (the object that is being matched against the cases)
+        and cases contains an iterable of match_case nodes with the different cases."""
+        
+		subject = self.visit(node.subject)
+  
+		if subject is not None:
+			multilabel = self.policy.get_implicit_patterns_multilabel(subject[1])
+			self.conditions_stack.append(multilabel)
+
+		conditions_stack = deepcopy(self.conditions_stack)
+
+		for i, case in enumerate(node.cases):
+			state = deepcopy(self)
+			# We need to keep track of all tested conditions from one case to the following
+			state.conditions_stack = conditions_stack
+			state.visit(case)
+			conditions_stack = state.conditions_stack
+			if i == 0:
+				cases = [state.multilabelling, state.vulnerabilities]
+			else:
+				cases[0].conciliate_multilabelling(self.policy, state.multilabelling)
+				cases[1].conciliate_vulnerabilities(state.vulnerabilities)
+
+		self.multilabelling.conciliate_multilabelling(self.policy, cases[0])
+		self.vulnerabilities.conciliate_vulnerabilities(cases[1])
+
+		if subject is not None:
+			self.conditions_stack.pop()
+   
+		return None, None
+
+	def visit_match_case(self, node):
+		"""A single case pattern in a match statement. 
+  		   pattern contains the match pattern that the subject will be matched against.
+           Note that the AST nodes produced for patterns differ from those produced for expressions, even when they share the same syntax.
+		   The guard attribute contains an expression that will be evaluated if the pattern matches the subject.
+		   body contains a list of nodes to execute if the pattern matches and the result of evaluating the guard expression is true."""
+		
+		pattern = self.visit(node.pattern)
+  
+		if pattern is not None:
+			multilabel = self.policy.get_implicit_patterns_multilabel(pattern[1])
+			self.conditions_stack.append(multilabel)
+
+		if node.guard is not None:
+			guard = self.visit(node.guard)
+
+			if guard is not None:
+				multilabel = self.policy.get_implicit_patterns_multilabel(guard[1])
+				self.conditions_stack.append(multilabel)
+
+		for body_node in node.body:
+			self.visit(body_node)
+   
+		return None, None
+   
+	def visit_MatchValue(self, node):
+		"""A match literal or value pattern that compares by equality.
+  		   value is an expression node.
+           Permitted value nodes are restricted as described in the match statement documentation.
+           This pattern succeeds if the match subject is equal to the evaluated value."""
+
+		return self.visit(node.value)
+
+	def MatchSingleton(self, node):
+		"""A match literal pattern that compares by identity.
+		   value is the singleton to be compared against: None, True, or False.
+		   This pattern succeeds if the match subject is the given constant."""
+
+		return self.visit(node.value)
