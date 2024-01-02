@@ -1,0 +1,41 @@
+[
+    {
+        "vulnerability": "SQL Injection",
+        "sources": [
+			"ChatMessageForm",
+			"ContactMailForm"
+		],
+        "sanitizers": [
+            "san"
+        ],
+        "sinks": [
+            "execute"
+        ],
+        "implicit": "yes"
+    },
+    {
+        "vulnerability": "Untrusted Input",
+        "sources": [
+			"ChatMessageForm",
+			"ContactMailForm"
+        ],
+        "sanitizers": [],
+        "sinks": [
+            "fetchone",
+            "execute"
+        ],
+        "implicit": "yes"
+    },
+    {
+        "vulnerability": "Untrusted Input2",
+        "sources": [
+			"ChatMessageForm",
+			"ContactMailForm"
+        ],
+        "sanitizers": [],
+        "sinks": [
+            "execute"
+        ],
+        "implicit": "no"
+    }
+]

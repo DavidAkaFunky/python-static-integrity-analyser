@@ -8,8 +8,49 @@ class ASTVisitor(ast.NodeVisitor):
 		self.policy = Policy([Pattern.from_json(pattern) for pattern in patterns])
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
-		self.stack = []
+		self.conditions_stack = []
    
+	def __update_test(self, test_node, pos = None):
+		test = self.visit(test_node)
+  
+		if test is None:
+			return None
+
+		test = test[1]
+
+		imp = self.policy.get_implicit_patterns_multilabel(test)
+		#print(test, "TEST_")
+		for k in test.get_vulns():
+			if k not in imp.get_vulns():
+				del test.label_map[k]
+
+		if pos is None:
+			pos = len(self.conditions_stack) - 1
+			self.conditions_stack.append(test)
+		else:
+			self.conditions_stack[pos] = test
+
+		#print(self.conditions_stack[pos], "POS_")
+		return pos
+ 
+	def __get_variable_multilabel(self, name, lineno):
+		simple_node = Node(name, lineno)
+		multilabel = MultiLabel(self.policy.get_patterns_by_source(name), [Label(simple_node)])
+		
+		if self.multilabelling.is_variable_initialised(name):
+			multilabel = MultiLabel.combine(self.multilabelling.get_multilabel(name), multilabel)
+
+			# Variables not present in *all* if/else branches 
+   			# contain a false "non-initialised" source with lineno = -1.
+			# This is fixed by replacing that value with the node's lineno
+			# before returning the multilabel
+			multilabel.fix_lineno(lineno)
+			return simple_node, multilabel
+
+		# Uninitialised variable -> Return multilabel where it's a source in all patterns
+		return simple_node, MultiLabel.create_for_uninitialised_variable(self.policy, simple_node)
+		
+	
 	########### EXPRESSIONS ###########
 	
 	def visit_Name(self, node):
@@ -18,17 +59,31 @@ class ASTVisitor(ast.NodeVisitor):
 		(also known as the walrus operator).
 		   As opposed to the Assign node in which the first argument can be multiple nodes,
 		in this case both target and value must be single nodes."""
-		pass
+  
+		return self.__get_variable_multilabel(node.id, node.lineno)
    			
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
 		   op is the operator, and left and right are any expression nodes."""
-		self.visit(node.left)
-		self.visit(node.right)
+
+		#print("BINOP")
+
+		left = self.visit(node.left)
+		if left is None:
+			left_multilabel = MultiLabel.create_empty()
+		else:
+			left_multilabel = left[1]
+   
+		right = self.visit(node.right)
+		if right is None:
+			return None, left_multilabel
+		return None, MultiLabel.combine(left_multilabel, right[1])
 			
 	def visit_UnaryOp(self, node):
 		"""A unary operation. op is the operator, and operand any expression node."""
-		self.visit(node.operand)
+  
+		_, multiLabel = self.visit(node.operand)
+		return None, multiLabel
 			
 	def visit_BoolOp(self, node):
 		"""A boolean operation, 'or' or 'and'. op is Or or And.
@@ -36,16 +91,28 @@ class ASTVisitor(ast.NodeVisitor):
 		   Consecutive operations with the same operator, such as a or b or c,
 		are collapsed into one node with several values.
 		   This doesn't include not, which is a UnaryOp."""
+	 
+		multilabel = MultiLabel.create_empty()
 		for value in node.values:
-			self.visit(value)
+			_, value_multilabel = self.visit(value)
+			multilabel = MultiLabel.combine(multilabel, value_multilabel)
+		return None, multilabel
 			
 	def visit_Compare(self, node):
 		"""A comparison of two or more values.
 		   left is the first value in the comparison, ops the list of operators,
 		and comparators the list of values after the first element in the comparison."""
-		self.visit(node.left)
+ 
+		_, multilabel = self.visit(node.left)
 		for comparator in node.comparators:
-			self.visit(comparator)
+			cmp_multilabel = self.visit(comparator)
+			if cmp_multilabel is None:
+				cmp_multilabel = MultiLabel.create_empty()
+			else:
+				_, cmp_multilabel = cmp_multilabel
+			multilabel = MultiLabel.combine(multilabel, cmp_multilabel)
+
+		return None, multilabel
 			
 	def visit_Call(self, node):
 		"""A function call.
@@ -54,55 +121,64 @@ class ASTVisitor(ast.NodeVisitor):
 		   - keywords holds a list of keyword objects representing arguments passed by keyword.
 		   When creating a Call node, args and keywords are required, but they can be empty lists."""
 
-		self.visit(node.func)
-		if isinstance(node.func, ast.Name):
-			func = node.func.id
-		elif isinstance(node.func, ast.Attribute):
-			func = node.func.attr
-		else:
-			raise Exception("Function call not supported")
+		#print("CALL")
 
-		args = node.args + node.keywords
-		args_nodes = []
-  
-		for arg in args:
-			self.visit(arg)
-			if isinstance(arg, ast.Name):
-				args_nodes.append(Node(arg.id, node.lineno))
-			elif isinstance(arg, ast.Attribute):
-				args_nodes.append(Node(arg.attr, node.lineno))
-			else:
-				raise Exception("Function call not supported")
+		func_variables, _ = self.visit(node.func)
+   
+		if type(func_variables) != list:
+			func_variables = [func_variables]
 		
-		func_variable = Node(func, node.lineno)
-		multilabel_source = MultiLabel(self.policy.get_patterns_by_source(func), Label({func_variable}, [[]]))
-		multilabel_sanitiser = MultiLabel(self.policy.get_patterns_by_sanitiser(func), Label(set(), [[func_variable]]))
-		multilabelling = MultiLabelling()
+		return_multilabel = MultiLabel.create_empty()
 
-		for arg_node in args_nodes:
-			# TODO Maybe check (somehow) if the argument is a value or a reference
-			arg_name = arg_node.get_name()
-			multilabelling.add_multilabel(arg_name, multilabel_source)
-			multilabelling.add_multilabel(arg_name, multilabel_sanitiser)
-			if arg_name in self.multilabelling.get_variable_map():	
-				self.vulnerabilities.add_vulnerability(self.policy, self.multilabelling.get_multilabel(arg_name), func_variable)
+		for arg_node in node.args + node.keywords:
+			arg = self.visit(arg_node)
+			if arg is None:
+				arg_multilabel = MultiLabel.create_empty()
+			else:
+				_, arg_multilabel = arg
+			return_multilabel = MultiLabel.combine(return_multilabel, arg_multilabel)
    
-		self.multilabelling = MultiLabelling.combine(self.multilabelling, multilabelling)
-  
-		for arg_node in args_nodes:
-			if arg_node.get_name() in self.multilabelling.get_variable_map():
-				self.stack.append(self.multilabelling.get_multilabel(arg_node.get_name()))
-   
-		self.stack.append(multilabel_source)
-		self.stack.append(multilabel_sanitiser)
+		for cond in self.conditions_stack:
+			return_multilabel = MultiLabel.combine(return_multilabel, cond)
+		
+		for func_variable in func_variables:
+			return_multilabel.sanitise(self.policy, func_variable)
+			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
+
+		# FIXME Only the final argument counts as caller
+		# This works fine for calls like x() and x.y()
+		# But treats y as a variable in x.y().z()
+		for func_variable in func_variables[:-1]:
+			return_multilabel = MultiLabel.combine(return_multilabel, self.__get_variable_multilabel(func_variable.get_name(), func_variable.get_line())[1])
+
+		# Workaround for the problem above so that the name of the function always counts as initialised
+  		# and doesn't generate non-initialised multilabels (e.g. y in the last example)
+		self.multilabelling.set_multilabel(func_variables[-1].get_name(), MultiLabel.create_empty())
+	
+		return func_variables, MultiLabel.combine(return_multilabel, MultiLabel(self.policy.get_patterns_by_source(func_variables[-1].get_name()), [Label(func_variables[-1])]))
 			
 	def visit_Attribute(self, node):
 		"""Attribute access, e.g. d.keys.
 		   value is a node, typically a Name.
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
-		# Might not be great, since the vulnerability is added to the attribute, not the value
-		pass
+
+		#print("ATTRIBUTE")
+		all_nodes, value_multilabel = self.visit(node.value)
+		if type(all_nodes) != list:
+			all_nodes = [all_nodes]
+
+		# Only the attribute is initialised
+		for node_ in all_nodes:
+			node_.do_not_initialise()
+  
+		attr_node, attr_multilabel = self.__get_variable_multilabel(node.attr, node.lineno)
+
+		all_nodes.append(attr_node)
+		#print("VALUE MULTILABEL", value_multilabel)
+		#print("ATTR MULTILABEL", attr_multilabel)
+		return all_nodes, MultiLabel.combine(value_multilabel, attr_multilabel)
+		
 			
 	########### STATEMENTS ###########
 		
@@ -112,35 +188,131 @@ class ASTVisitor(ast.NodeVisitor):
 		it is wrapped in this container.
 		   value holds one of the other nodes in this section, 
 		a Constant, a Name, a Lambda, a Yield or YieldFrom node."""
-		self.visit(node.value)
+  
+		_, multilabel = self.visit(node.value)
+		return None, multilabel
 		
 	def visit_Assign(self, node):
 		"""An assignment. targets is a list of nodes, and value is a single node.
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
+
+		#print("ASSIGN")
+
+		#print(type(node.value))
+		value = self.visit(node.value)
+		#print(value)
+		if value is None:
+			value_multilabel = MultiLabel.create_empty()
+		else:
+			_, value_multilabel = value
+		targets = []
+
 		for target in node.targets:
-			self.visit(target)
-		self.visit(node.value)
-		while len(self.stack) > 0:
-			multilabel = self.stack.pop()
-			for target in node.targets:
-				if isinstance(target, ast.Name):
-					target_name = target.id
-				elif isinstance(target, ast.Attribute):
-					target_name = target.attr
-				else:
-					raise Exception("Function call not supported")
-				self.multilabelling.add_multilabel(target_name, multilabel)
+			# Converting to iterable to allow return unpacking
+			# If it's a tuple, visit may return a list of (name, multilabel)
+			# Otherwise, it returns just a (name, multilabel),
+			# so making it a list allows concatenation of the results
+			#print(type(target))
+			target_node, _ = self.visit(target)
+	
+			if type(target_node) != list:
+				target_node = [target_node]
+			targets += target_node
+  
+		#print(value_multilabel)
+  
+		for target_node in targets:
 			
+			for iws in self.conditions_stack:
+				value_multilabel = MultiLabel.combine(value_multilabel, iws)
+      
+			self.vulnerabilities.add_vulnerability(self.policy, value_multilabel, target_node)
+
+			if target_node.should_initialise():
+				self.multilabelling.set_multilabel(target_node.get_name(), value_multilabel)
+				
+		
+		#print("MULTILABELLING", self.multilabelling)
+		#print("_______________")
+		return None, None
+   
 	def visit_If(self, node):
 		"""An if statement.
 		   test holds a single node, such as a Compare node.
 		   body and orelse each hold a list of nodes.
 		   elif clauses don't have a special representation in the AST,
 		but rather appear as extra If nodes within the orelse section of the previous one."""
-		pass
-			
+
+		#print("IF")
+
+		test = self.visit(node.test)
+  
+		if test is not None:
+			multilabel = self.policy.get_implicit_patterns_multilabel(test[1])
+			self.conditions_stack.append(multilabel)
+
+		ml1 = deepcopy(self)
+		for body_node in node.body:
+			ml1.visit(body_node)
+		
+		ml2 = deepcopy(self)
+		for or_else_node in node.orelse:
+			ml2.visit(or_else_node)
+
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
+
+		if test is not None:
+			self.conditions_stack.pop()
+
+		return None, None
+
 	def visit_While(self, node):
 		"""A while loop.
-		   test holds the condition, such as a Compare node."""
-		pass
+		test holds the condition, such as a Compare node."""
+
+		iws_pos = self.__update_test(node.test)
+
+		ml1 = deepcopy(self)
+		ml_state = deepcopy(self)
+  
+		for _ in range(10000):
+			#print(i, "WHILE", node.lineno)
+			for body_node in node.body:
+				ml1.visit(body_node)
+
+			#print("MULTILABELLING", ml1.multilabelling)
+			#print("MULTILABELLING", ml_state.multilabelling)
+			#print(ml1.multilabelling == ml_state.multilabelling)
+			if ml1.multilabelling == ml_state.multilabelling:
+				break
+
+			ml1.__update_test(node.test, iws_pos)
+
+			ml_state = ml1
+
+		ml2 = deepcopy(self)
+		for or_else_node in node.orelse:
+			ml2.visit(or_else_node)
+		
+		#print("MULTILABELLING1", ml1.multilabelling)
+		#print("MULTILABELLING2", ml2.multilabelling)
+  
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		#print("MULTILABELLING FINAL", ml1.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
+
+		if iws_pos is not None:
+			self.conditions_stack.pop()
+
+		del ml1
+		del ml2
+
+		return None, None
