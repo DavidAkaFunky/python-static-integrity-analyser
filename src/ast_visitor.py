@@ -404,3 +404,67 @@ class ASTVisitor(ast.NodeVisitor):
 		   This pattern succeeds if the match subject is the given constant."""
 
 		return self.visit(node.value)
+
+	def visit_For(self, node):
+		ml1 = deepcopy(self)
+		ml_state = deepcopy(self)
+		found_break = False
+		found_continue = False
+		inited = False
+
+		targets = [node.target] if (type(node.target) != tuple and type(node.target) != list) else node.target
+		iter = [node.iter] if (type(node.iter) != tuple and type(node.iter) != list) else node.iter
+
+		def for_update():
+			for t in targets:
+				ml1.multilabelling.set_multilabel(t.id, MultiLabel.create_empty())
+				ml1.visit(ast.Assign(targets=[t], value= ast.Compare(left=t, ops=[ast.In()], comparators=iter)))
+
+		for _ in range(10000):
+			for_update()
+
+			#print(i, "FOR", node.lineno)
+			for body_node in node.body:
+
+				if type(body_node) == ast.Break:
+					found_break = True
+					break
+
+				if type(body_node) == ast.Continue:
+					break
+
+				ml1.visit(body_node)
+
+			if found_break:
+				break
+
+			#print("MULTILABELLING", ml1.multilabelling)
+			#print("MULTILABELLING", ml_state.multilabelling)
+			#print(ml1.multilabelling == ml_state.multilabelling)
+			if ml1.multilabelling == ml_state.multilabelling:
+				break
+
+			ml_state = ml1
+			
+
+		ml2 = deepcopy(self)
+		for or_else_node in node.orelse:
+			if not found_break:
+				ml1.visit(or_else_node)
+			ml2.visit(or_else_node)
+		
+		#print("MULTILABELLING1", ml1.multilabelling)
+		#print("MULTILABELLING2", ml2.multilabelling)
+
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		#print("MULTILABELLING FINAL", ml1.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
+
+		del ml1
+		del ml2
+
+		return None, None
+        
