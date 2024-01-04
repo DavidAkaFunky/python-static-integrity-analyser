@@ -423,4 +423,4 @@ class Vulnerabilities:
                     output.append(vuln)
                     i += 1
 
-        return json.dumps(output, default=lambda o: o.__dict__, indent=4)
+        return output
