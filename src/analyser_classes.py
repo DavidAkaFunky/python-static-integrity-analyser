@@ -400,8 +400,8 @@ class Vulnerabilities:
         <VULNERABILITY> ::= { "vulnerability": "<STRING>",
                             "source": ["<STRING>", <INT>],
                             "sink": ["<STRING>", <INT>],
-                            "unsanitized_flows": <YESNO>,
-                            "sanitized_flows": [ <FLOWS> ] }
+                            "sanitized_flows": [ <FLOWS> ],
+                            "unsanitized_flows": <YESNO> }
         <YESNO> ::= "yes" | "no"
         <FLOWS> ::= "none" | <FLOW> | <FLOW>, <FLOWS>
         <FLOW> ::= [ <SANITIZERS> ]
@@ -418,8 +418,8 @@ class Vulnerabilities:
                     vuln["vulnerability"] = vuln_name + "_" + str(i)
                     vuln["source"] = pair[0].as_list()
                     vuln["sink"] = sink.as_list()
-                    vuln["unsanitized_flows"] = "yes" if any([len(flow) == 0 for flow in pair[1]]) else "no"
                     vuln["sanitized_flows"] = [[sanitiser.as_list() for sanitiser in flow] for flow in pair[1] if len(flow) > 0]
+                    vuln["unsanitized_flows"] = "yes" if any([len(flow) == 0 for flow in pair[1]]) else "no"
                     output.append(vuln)
                     i += 1
 

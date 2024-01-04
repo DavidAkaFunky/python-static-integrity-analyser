@@ -294,6 +294,9 @@ class ASTVisitor(ast.NodeVisitor):
 				ml1.visit(or_else_node)
 			ml2.visit(or_else_node)
   
+		for st in ml_states:
+			ml1.multilabelling = MultiLabelling.combine(ml1.multilabelling, st)
+
 		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
 		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
