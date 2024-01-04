@@ -85,7 +85,6 @@ class Label:
        it must belong to a MultiLabel instance."""
     
     def __init__(self, source=None):
-        # Is a set adequate? Maybe repeated elements are okay
         self.pairs = []
         if source is not None:
             self.add_pair([source, [[]]])
@@ -94,24 +93,19 @@ class Label:
         return deepcopy(self.pairs)
     
     def sanitise(self, sanitiser: Node):
-        #print("SANITISING!!!!", self.pairs, sanitiser)
         for pair in self.pairs:
             for i, flow in enumerate(pair[1]):
                 if sanitiser not in flow:
                     flow.append(sanitiser)
                     if any(j < i and x == flow for j, x in enumerate(pair[1])):
                         pair[1].pop(i)
-        #print("SANITISED!!!!", self.pairs)
             
     def add_pair(self, other_pair):
         for pair in self.pairs:
             if pair[0] == other_pair[0]:
                 for flow in other_pair[1]:
-                    #print("FLOW", flow)
-                    #print("PAIR1 BEFORE", pair[1])
                     if flow not in pair[1]:
                         pair[1].append(flow)
-                    #print("PAIR1 AFTER", pair[1])
                 return
         self.pairs.append(other_pair)
         
@@ -154,12 +148,8 @@ class Label:
     @staticmethod 
     def combine(label1, label2):
         new_label = label1.get_copy()
-        label1_pairs = label1.get_pairs()
         label2_pairs = label2.get_pairs()
-        #print("LABEL1", label1)
-        #print("LABEL2", label2)
         for pair in label2_pairs:
-            #print(pair, pair not in label1_pairs)
             new_label.add_pair(pair)
         return new_label
 
@@ -242,8 +232,6 @@ class MultiLabel:
 
     @staticmethod
     def combine(multilabel1, multilabel2):
-        #print("ML1", multilabel1)
-        #print("ML2", multilabel2)
         new_multilabel = multilabel1.get_copy()
         multilabel1_vulns = multilabel1.get_vulns()
         multilabel2_vulns = multilabel2.get_vulns()
@@ -252,7 +240,6 @@ class MultiLabel:
                 new_multilabel.label_map[vuln_name] = Label.combine(multilabel1.get_label(vuln_name), multilabel2.get_label(vuln_name))
             else:
                 new_multilabel.label_map[vuln_name] = multilabel2.get_label(vuln_name)
-        #print("COMBINED", new_multilabel)
         return new_multilabel
 
     

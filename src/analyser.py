@@ -13,7 +13,6 @@ if __name__ == "__main__":
         patterns_json = json.load(f)
     
     ast_py = ast.parse(slice_file.read())
-    #print(astexport.export.export_dict(ast_py))
     visitor = ASTVisitor(patterns_json)
     visitor.visit(ast_py)
     print(visitor.vulnerabilities)

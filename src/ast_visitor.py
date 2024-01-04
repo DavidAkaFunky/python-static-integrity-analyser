@@ -19,7 +19,7 @@ class ASTVisitor(ast.NodeVisitor):
 		test = test[1]
 
 		imp = self.policy.get_implicit_patterns_multilabel(test)
-		#print(test, "TEST_")
+
 		for k in test.get_vulns():
 			if k not in imp.get_vulns():
 				del test.label_map[k]
@@ -30,7 +30,6 @@ class ASTVisitor(ast.NodeVisitor):
 		else:
 			self.conditions_stack[pos] = test
 
-		#print(self.conditions_stack[pos], "POS_")
 		return pos
  
 	def __get_variable_multilabel(self, name, lineno):
@@ -65,8 +64,6 @@ class ASTVisitor(ast.NodeVisitor):
 	def visit_BinOp(self, node):
 		"""A binary operation (like addition or division).
 		   op is the operator, and left and right are any expression nodes."""
-
-		#print("BINOP")
 
 		left = self.visit(node.left)
 		if left is None:
@@ -122,8 +119,6 @@ class ASTVisitor(ast.NodeVisitor):
 		   - keywords holds a list of keyword objects representing arguments passed by keyword.
 		   When creating a Call node, args and keywords are required, but they can be empty lists."""
 
-		#print("CALL")
-
 		func_variables, _ = self.visit(node.func)
    
 		if type(func_variables) != list:
@@ -141,16 +136,11 @@ class ASTVisitor(ast.NodeVisitor):
    
 		for cond in self.conditions_stack:
 			return_multilabel = MultiLabel.combine(return_multilabel, cond)
-
-		#print(func_variables, return_multilabel)
  
 		for func_variable in func_variables:
 			return_multilabel.sanitise(self.policy, func_variable)
 			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
 
-		# FIXME Only the final argument counts as caller
-		# This works fine for calls like x() and x.y()
-		# But treats y as a variable in x.y().z()
 		for func_variable in func_variables[:-1]:
 			return_multilabel = MultiLabel.combine(return_multilabel, self.__get_variable_multilabel(func_variable.get_name(), func_variable.get_line())[1])
 
@@ -166,7 +156,6 @@ class ASTVisitor(ast.NodeVisitor):
 		   attr is a bare string giving the name of the attribute,
 		and ctx is Load, Store or Del according to how the attribute is acted on."""
 
-		#print("ATTRIBUTE")
 		all_nodes, value_multilabel = self.visit(node.value)
 		if type(all_nodes) != list:
 			all_nodes = [all_nodes]
@@ -178,8 +167,7 @@ class ASTVisitor(ast.NodeVisitor):
 		attr_node, attr_multilabel = self.__get_variable_multilabel(node.attr, node.lineno)
 
 		all_nodes.append(attr_node)
-		#print("VALUE MULTILABEL", value_multilabel)
-		#print("ATTR MULTILABEL", attr_multilabel)
+
 		return all_nodes, MultiLabel.combine(value_multilabel, attr_multilabel)
 		
 			
@@ -200,11 +188,8 @@ class ASTVisitor(ast.NodeVisitor):
 		   Multiple nodes in targets represents assigning the same value to each.
 		   Unpacking is represented by putting a Tuple or List within targets."""
 
-		#print("ASSIGN")
-
-		#print(type(node.value))
 		value = self.visit(node.value)
-		#print(value)
+
 		if value is None:
 			value_multilabel = MultiLabel.create_empty()
 		else:
@@ -216,14 +201,12 @@ class ASTVisitor(ast.NodeVisitor):
 			# If it's a tuple, visit may return a list of (name, multilabel)
 			# Otherwise, it returns just a (name, multilabel),
 			# so making it a list allows concatenation of the results
-			#print(type(target))
+
 			target_node, _ = self.visit(target)
 	
 			if type(target_node) != list:
 				target_node = [target_node]
 			targets += target_node
-  
-		#print(value_multilabel)
   
 		for target_node in targets:
 			
@@ -234,10 +217,7 @@ class ASTVisitor(ast.NodeVisitor):
 
 			if target_node.should_initialise():
 				self.multilabelling.set_multilabel(target_node.get_name(), value_multilabel)
-				
-		
-		#print("MULTILABELLING", self.multilabelling)
-		#print("_______________")
+
 		return None, None
    
 	def visit_If(self, node):
@@ -246,8 +226,6 @@ class ASTVisitor(ast.NodeVisitor):
 		   body and orelse each hold a list of nodes.
 		   elif clauses don't have a special representation in the AST,
 		but rather appear as extra If nodes within the orelse section of the previous one."""
-
-		#print("IF")
 
 		test = self.visit(node.test)
 
@@ -262,17 +240,9 @@ class ASTVisitor(ast.NodeVisitor):
 		ml2 = deepcopy(self)
 		for or_else_node in node.orelse:
 			ml2.visit(or_else_node)
-   
-		#print("BEFORE")
-		#print(ml1.multilabelling)
-		#print(ml2.multilabelling)
 
 		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
 		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
-
-		#print("AFTER")
-		#print(ml1.multilabelling)
-		#print("______________________________________________________________")
 
 		self.multilabelling = ml1.multilabelling
 		self.vulnerabilities = ml1.vulnerabilities
