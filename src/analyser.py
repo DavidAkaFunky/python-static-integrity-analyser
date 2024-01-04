@@ -19,6 +19,6 @@ if __name__ == "__main__":
     output_folder = "./output/"
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    output_file = open(output_folder + sys.argv[1].split("/")[1].split(".")[0] + ".output.json", "w+")
+    output_file = open(output_folder + sys.argv[1].split("/")[-1].split(".")[0] + ".output.json", "w+")
     output_file.write(json.dumps(visitor.vulnerabilities.__repr__(), default=lambda o: o.__dict__, indent=4))
     output_file.close()
