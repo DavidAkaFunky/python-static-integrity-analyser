@@ -256,11 +256,12 @@ class ASTVisitor(ast.NodeVisitor):
 		"""A while loop.
 		   test holds the condition, such as a Compare node."""
 
-		iws_pos = self.__update_test(node.test)
-
 		ml1 = deepcopy(self)
-		found_break = False
+		ml2 = deepcopy(self)
+		iws_pos = ml1.__update_test(node.test)
 
+		found_break = False
+  
 		ml_states = [deepcopy(ml1.multilabelling)]
   
 		for _ in range(10000):
@@ -283,37 +284,27 @@ class ASTVisitor(ast.NodeVisitor):
    
 			ml1.__update_test(node.test, iws_pos)
 
-		if not found_break: # No longer an implicit flow
+		if found_break: # Only the no-while flow enters the "else" -> It gets implicitly tainted
+			ml2.__update_test(node.test)
+		elif iws_pos is not None: # Both flows enter the "else" -> No implicit flow
+			ml1.conditions_stack.pop()
+  
+		for or_else_node in node.orelse:
+			if not found_break:
+				ml1.visit(or_else_node)
+			ml2.visit(or_else_node)
+  
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
-			self.multilabelling = ml1.multilabelling
-			self.vulnerabilities = ml1.vulnerabilities
-   
-			if iws_pos is not None:
-				self.conditions_stack.pop()
-   
-			for or_else_node in node.orelse:
-				self.visit(or_else_node)
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
 
-		else:
-      
-			ml2 = deepcopy(self)
-			for or_else_node in node.orelse:
-				ml2.visit(or_else_node)
-
-			ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
-			ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
-
-			del ml2
-
-			self.multilabelling = ml1.multilabelling
-			self.vulnerabilities = ml1.vulnerabilities
-
-			if iws_pos is not None:
-				self.conditions_stack.pop()
-		
 		del ml1
+		del ml2
 
 		return None, None
+
 
 	def visit_Match(self, node):
 		"""A match statement. 
@@ -390,9 +381,10 @@ class ASTVisitor(ast.NodeVisitor):
 
 	def visit_For(self, node):
 
-		iws_pos = self.__update_test(node.iter)
-  
 		ml1 = deepcopy(self)
+		ml2 = deepcopy(self)
+		iws_pos = ml1.__update_test(node.iter)
+  
 		found_break = False
 
 		ml_states = [deepcopy(ml1.multilabelling)]
@@ -421,35 +413,24 @@ class ASTVisitor(ast.NodeVisitor):
 
 			ml1.__update_test(node.iter, iws_pos)
 		
-		if not found_break: # No longer an implicit flow
+		if found_break: # Only the no-while flow enters the "else" -> It gets implicitly tainted
+			ml2.__update_test(node.iter)
+		elif iws_pos is not None: # Both flows enter the "else" -> No implicit flow
+			ml1.conditions_stack.pop()
 
-			self.multilabelling = ml1.multilabelling
-			self.vulnerabilities = ml1.vulnerabilities
-   
-			if iws_pos is not None:
-				self.conditions_stack.pop()
-   
-			for or_else_node in node.orelse:
-				self.visit(or_else_node)
+		for or_else_node in node.orelse:
+			if not found_break:
+				ml1.visit(or_else_node)
+			ml2.visit(or_else_node)
 
-		else:
-      
-			ml2 = deepcopy(self)
-			for or_else_node in node.orelse:
-				ml2.visit(or_else_node)
+		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
-			ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
-			ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+		self.multilabelling = ml1.multilabelling
+		self.vulnerabilities = ml1.vulnerabilities
 
-			del ml2
-
-			self.multilabelling = ml1.multilabelling
-			self.vulnerabilities = ml1.vulnerabilities
-
-			if iws_pos is not None:
-				self.conditions_stack.pop()
-		
 		del ml1
+		del ml2
 
 		return None, None
         
