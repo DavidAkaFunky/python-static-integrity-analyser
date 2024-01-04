@@ -99,7 +99,7 @@ class Label:
             for i, flow in enumerate(pair[1]):
                 if sanitiser not in flow:
                     flow.append(sanitiser)
-                    if len([x for x in pair[1] if x == flow]) > 1:
+                    if any(j < i and x == flow for j, x in enumerate(pair[1])):
                         pair[1].pop(i)
         #print("SANITISED!!!!", self.pairs)
             
@@ -125,12 +125,21 @@ class Label:
                 source.set_line(lineno)
     
     def __eq__(self, other):
+        def are_equal(self_pair, other_pair):
+            if self_pair[0] != other_pair[0] or len(self_pair[1]) != len(other_pair[1]):
+                return False
+            for flow in self_pair[1]:
+                if flow not in other_pair[1]:
+                    return False
+            return True
+        
         if len(self.pairs) != len(other.pairs):
             return False
-
-        for pair in self.pairs:
-            if pair not in other.pairs:
+        
+        for self_pair in self.pairs:
+            if not any(are_equal(self_pair, other_pair) for other_pair in other.pairs):
                 return False
+                
         return True
         
     def __repr__(self):
