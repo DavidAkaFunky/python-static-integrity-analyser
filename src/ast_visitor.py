@@ -77,6 +77,7 @@ class ASTVisitor(ast.NodeVisitor):
 		right = self.visit(node.right)
 		if right is None:
 			return None, left_multilabel
+
 		return None, MultiLabel.combine(left_multilabel, right[1])
 			
 	def visit_UnaryOp(self, node):
@@ -280,7 +281,6 @@ class ASTVisitor(ast.NodeVisitor):
 		ml1 = deepcopy(self)
 		ml_state = deepcopy(self)
 		found_break = False
-		found_continue = False
   
 		for _ in range(10000):
 			#print(i, "WHILE", node.lineno)
@@ -307,28 +307,36 @@ class ASTVisitor(ast.NodeVisitor):
 			ml1.__update_test(node.test, iws_pos)
 
 			ml_state = ml1
+   
+		if not found_break: # No longer an implicit flow
 
-		ml2 = deepcopy(self)
-		for or_else_node in node.orelse:
-			if not found_break:
-				ml1.visit(or_else_node)
-			ml2.visit(or_else_node)
+			self.multilabelling = ml1.multilabelling
+			self.vulnerabilities = ml1.vulnerabilities
+   
+			if iws_pos is not None:
+				self.conditions_stack.pop()
+   
+			for or_else_node in node.orelse:
+				self.visit(or_else_node)
+
+		else:
+      
+			ml2 = deepcopy(self)
+			for or_else_node in node.orelse:
+				ml2.visit(or_else_node)
+
+			ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+			ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+			del ml2
+
+			self.multilabelling = ml1.multilabelling
+			self.vulnerabilities = ml1.vulnerabilities
+
+			if iws_pos is not None:
+				self.conditions_stack.pop()
 		
-		#print("MULTILABELLING1", ml1.multilabelling)
-		#print("MULTILABELLING2", ml2.multilabelling)
-  
-		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
-		#print("MULTILABELLING FINAL", ml1.multilabelling)
-		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
-
-		self.multilabelling = ml1.multilabelling
-		self.vulnerabilities = ml1.vulnerabilities
-
-		if iws_pos is not None:
-			self.conditions_stack.pop()
-
 		del ml1
-		del ml2
 
 		return None, None
 
@@ -406,22 +414,18 @@ class ASTVisitor(ast.NodeVisitor):
 		return self.visit(node.value)
 
 	def visit_For(self, node):
+
+		iws_pos = self.__update_test(node.iter)
+  
 		ml1 = deepcopy(self)
 		ml_state = deepcopy(self)
 		found_break = False
-		found_continue = False
-		inited = False
-
-		targets = [node.target] if (type(node.target) != tuple and type(node.target) != list) else node.target
-		iter = [node.iter] if (type(node.iter) != tuple and type(node.iter) != list) else node.iter
-
-		def for_update():
-			for t in targets:
-				ml1.multilabelling.set_multilabel(t.id, MultiLabel.create_empty())
-				ml1.visit(ast.Assign(targets=[t], value= ast.Compare(left=t, ops=[ast.In()], comparators=iter)))
 
 		for _ in range(10000):
-			for_update()
+      
+			targets = [node.target] if (type(node.target) != tuple and type(node.target) != list) else node.target
+			assignment = ast.Assign(targets, node.iter)
+			ml1.visit(assignment)
 
 			#print(i, "FOR", node.lineno)
 			for body_node in node.body:
@@ -438,33 +442,40 @@ class ASTVisitor(ast.NodeVisitor):
 			if found_break:
 				break
 
-			#print("MULTILABELLING", ml1.multilabelling)
-			#print("MULTILABELLING", ml_state.multilabelling)
-			#print(ml1.multilabelling == ml_state.multilabelling)
 			if ml1.multilabelling == ml_state.multilabelling:
 				break
 
+			ml1.__update_test(node.iter, iws_pos)
+
 			ml_state = ml1
 			
+		if not found_break: # No longer an implicit flow
 
-		ml2 = deepcopy(self)
-		for or_else_node in node.orelse:
-			if not found_break:
-				ml1.visit(or_else_node)
-			ml2.visit(or_else_node)
-		
-		#print("MULTILABELLING1", ml1.multilabelling)
-		#print("MULTILABELLING2", ml2.multilabelling)
+			self.multilabelling = ml1.multilabelling
+			self.vulnerabilities = ml1.vulnerabilities
+   
+			if iws_pos is not None:
+				self.conditions_stack.pop()
+   
+			for or_else_node in node.orelse:
+				self.visit(or_else_node)
 
-		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
-		#print("MULTILABELLING FINAL", ml1.multilabelling)
-		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+		else:
+      
+			ml2 = deepcopy(self)
+			for or_else_node in node.orelse:
+				ml2.visit(or_else_node)
 
-		self.multilabelling = ml1.multilabelling
-		self.vulnerabilities = ml1.vulnerabilities
+			ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
+			ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
 
-		del ml1
-		del ml2
+			del ml2
+
+			self.multilabelling = ml1.multilabelling
+			self.vulnerabilities = ml1.vulnerabilities
+
+			if iws_pos is not None:
+				self.conditions_stack.pop()
 
 		return None, None
         
