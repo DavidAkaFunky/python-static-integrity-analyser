@@ -9,7 +9,7 @@ class ASTVisitor(ast.NodeVisitor):
 		self.vulnerabilities = Vulnerabilities()
 		self.multilabelling = MultiLabelling()
 		self.conditions_stack = []
-   
+
 	def __update_test(self, test_node, pos = None):
 		test = self.visit(test_node)
   
@@ -141,7 +141,9 @@ class ASTVisitor(ast.NodeVisitor):
    
 		for cond in self.conditions_stack:
 			return_multilabel = MultiLabel.combine(return_multilabel, cond)
-		
+
+		#print(func_variables, return_multilabel)
+ 
 		for func_variable in func_variables:
 			return_multilabel.sanitise(self.policy, func_variable)
 			self.vulnerabilities.add_vulnerability(self.policy, return_multilabel, func_variable)
@@ -248,7 +250,7 @@ class ASTVisitor(ast.NodeVisitor):
 		#print("IF")
 
 		test = self.visit(node.test)
-  
+
 		if test is not None:
 			multilabel = self.policy.get_implicit_patterns_multilabel(test[1])
 			self.conditions_stack.append(multilabel)
@@ -260,9 +262,17 @@ class ASTVisitor(ast.NodeVisitor):
 		ml2 = deepcopy(self)
 		for or_else_node in node.orelse:
 			ml2.visit(or_else_node)
+   
+		#print("BEFORE")
+		#print(ml1.multilabelling)
+		#print(ml2.multilabelling)
 
 		ml1.multilabelling.conciliate_multilabelling(self.policy, ml2.multilabelling)
 		ml1.vulnerabilities.conciliate_vulnerabilities(ml2.vulnerabilities)
+
+		#print("AFTER")
+		#print(ml1.multilabelling)
+		#print("______________________________________________________________")
 
 		self.multilabelling = ml1.multilabelling
 		self.vulnerabilities = ml1.vulnerabilities
@@ -279,11 +289,12 @@ class ASTVisitor(ast.NodeVisitor):
 		iws_pos = self.__update_test(node.test)
 
 		ml1 = deepcopy(self)
-		ml_state = deepcopy(self)
 		found_break = False
+
+		ml_states = [deepcopy(ml1.multilabelling)]
   
 		for _ in range(10000):
-			#print(i, "WHILE", node.lineno)
+   
 			for body_node in node.body:
 
 				if type(body_node) == ast.Break:
@@ -295,19 +306,13 @@ class ASTVisitor(ast.NodeVisitor):
  
 				ml1.visit(body_node)
     
-			if found_break:
+			if found_break or ml1.multilabelling in ml_states:
 				break
 
-			#print("MULTILABELLING", ml1.multilabelling)
-			#print("MULTILABELLING", ml_state.multilabelling)
-			#print(ml1.multilabelling == ml_state.multilabelling)
-			if ml1.multilabelling == ml_state.multilabelling:
-				break
-
+			ml_states.append(deepcopy(ml1.multilabelling))
+   
 			ml1.__update_test(node.test, iws_pos)
 
-			ml_state = ml1
-   
 		if not found_break: # No longer an implicit flow
 
 			self.multilabelling = ml1.multilabelling
@@ -418,16 +423,16 @@ class ASTVisitor(ast.NodeVisitor):
 		iws_pos = self.__update_test(node.iter)
   
 		ml1 = deepcopy(self)
-		ml_state = deepcopy(self)
 		found_break = False
 
+		ml_states = [deepcopy(ml1.multilabelling)]
+
 		for _ in range(10000):
-      
+   
 			targets = [node.target] if (type(node.target) != tuple and type(node.target) != list) else node.target
 			assignment = ast.Assign(targets, node.iter)
 			ml1.visit(assignment)
 
-			#print(i, "FOR", node.lineno)
 			for body_node in node.body:
 
 				if type(body_node) == ast.Break:
@@ -439,16 +444,13 @@ class ASTVisitor(ast.NodeVisitor):
 
 				ml1.visit(body_node)
 
-			if found_break:
+			if found_break or ml1.multilabelling in ml_states:
 				break
 
-			if ml1.multilabelling == ml_state.multilabelling:
-				break
+			ml_states.append(deepcopy(ml1.multilabelling))
 
 			ml1.__update_test(node.iter, iws_pos)
-
-			ml_state = ml1
-			
+		
 		if not found_break: # No longer an implicit flow
 
 			self.multilabelling = ml1.multilabelling
@@ -476,6 +478,11 @@ class ASTVisitor(ast.NodeVisitor):
 
 			if iws_pos is not None:
 				self.conditions_stack.pop()
+		
+		del ml1
 
 		return None, None
         
+	def visit_AugAssign(self, node):
+		targets = [node.target] if (type(node.target) != tuple and type(node.target) != list) else node.target
+		self.visit(ast.Assign(targets, ast.BinOp(node.target, node.op, node.value)))
