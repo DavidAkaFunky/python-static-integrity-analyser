@@ -1,4 +1,4 @@
-import sys, json, ast, astexport.export
+import os, sys, json, ast, astexport.export
 from ast_visitor import ASTVisitor
 
 if __name__ == "__main__":
@@ -15,4 +15,10 @@ if __name__ == "__main__":
     ast_py = ast.parse(slice_file.read())
     visitor = ASTVisitor(patterns_json)
     visitor.visit(ast_py)
-    print(visitor.vulnerabilities)
+
+    output_folder = "./output/"
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    output_file = open(output_folder + sys.argv[1].split("/")[1].split(".")[0] + ".output.json", "w+")
+    output_file.write(json.dumps(visitor.vulnerabilities.__repr__(), indent=4))
+    output_file.close()
