@@ -1,0 +1,63 @@
+[
+  {
+    "vulnerability": "Asyncio Command Injection",
+    "sources": [
+      "input"
+    ],
+    "sanitizers": [],
+    "sinks": [
+      "subprocess_shell",
+      "create_subprocess_shell"
+    ],
+    "implicit": "no"
+  },
+  {
+    "vulnerability": "email.utils.parseaddr RecursionError",
+    "sources": [
+      "input"
+    ],
+    "sanitizers": [],
+    "sinks": [
+      "parseaddr"
+    ],
+    "implicit": "no"
+  },
+  {
+    "vulnerability": "Subprocess Command Injection",
+    "sources": [
+      "input"
+    ],
+    "sanitizers": [
+      "split",
+      "quote"
+    ],
+    "sinks": [
+      "run",
+      "call"
+    ],
+    "implicit": "no"
+  },
+  {
+    "vulnerability": "Dynamic execution",
+    "sources": [
+      "input"
+    ],
+    "sanitizers": [],
+    "sinks": [
+      "eval",
+      "exec"
+    ],
+    "implicit": "no"
+  },
+  {
+    "vulnerability": "Pickle RCE",
+    "sources": [
+      "input"
+    ],
+    "sanitizers": [],
+    "sinks": [
+      "loads"
+    ],
+    "implicit": "no"
+  }
+]
