@@ -54,7 +54,10 @@
     "sources": [
       "input"
     ],
-    "sanitizers": [],
+    "sanitizers": [
+      "isinstance",
+      "type"
+    ],
     "sinks": [
       "loads"
     ],
